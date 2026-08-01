@@ -229,7 +229,7 @@ async def main():
         print("Could not connect. Check your internet connection.")
         exit(0)
     else:
-        print("Connected successfully!")
+        print(fg_hex("#9cff63", "Connected successfully"))
 
     clear_screen()
     while True:
@@ -280,6 +280,7 @@ async def main():
 
     print(Style.BRIGHT + fg_hex("#ffb4cc", "Welcome to Mew!"))
     while True:
+        clear_screen()
         print("1. View your projects")
         print("2. View your repos")
         print("X. Sign out")
@@ -287,6 +288,27 @@ async def main():
         menuChoice = input("> ")
         if menuChoice == "":
             print("Invalid choice. Try again.")
+
+        elif menuChoice.upper().strip() == "X":
+            print(f"{Fore.RED}[WARNING] {Style.RESET_ALL} This will delete your password, token, and session ID from this machine.")
+            deleteChoice = input(f"{Fore.RED}[WARNING] {Style.RESET_ALL} Are you sure you want to sign out? {Style.DIM} [y/N] {Style.RESET_ALL}")
+            if deleteChoice == "" or deleteChoice.upper().strip() == "N":
+                print("Alright!")
+                continue
+            elif deleteChoice.upper().strip() == "Y":
+                while True:
+                    passAttempt = input("Please enter your password: ")
+                    if passAttempt == password:
+                        break
+                    else:
+                        print(Fore.RED + "Incorrect password." + Style.RESET_ALL)
+                print("Signing out...")
+                os.remove(savedir + username + ".json")
+                print("Removed data.")
+                clear_screen()
+                print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
+                time.sleep(1)
+                exit(0)
 
         elif int(menuChoice) == 1:
             with open(("dataBase/idref.json"), "r") as f:
@@ -307,6 +329,7 @@ async def main():
 
         elif int(menuChoice) == 0:
             print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
+            time.sleep(1)
             exit(0)
 
         else:
