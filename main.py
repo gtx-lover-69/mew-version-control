@@ -278,9 +278,10 @@ async def main():
             clear_screen()
             break
 
-    print(Style.BRIGHT + fg_hex("#ffb4cc", "Welcome to Mew!"))
+
     while True:
         clear_screen()
+        print(Style.BRIGHT + fg_hex("#ffb4cc", "Welcome to Mew!"))
         print("1. View your projects")
         print("2. View your repos")
         print("X. Sign out")
@@ -297,11 +298,17 @@ async def main():
                 continue
             elif deleteChoice.upper().strip() == "Y":
                 while True:
-                    passAttempt = input("Please enter your password: ")
+                    passAttempt = input('Please enter your password' + Style.DIM + '(or type "ABORT" to cancel): ' + Style.RESET_ALL)
+                    if passAttempt.upper() == "ABORT":
+                        break
                     if passAttempt == password:
                         break
-                    else:
-                        print(Fore.RED + "Incorrect password." + Style.RESET_ALL)
+                    print(Fore.RED + "Incorrect password." + Style.RESET_ALL)
+
+                if passAttempt.strip() == "ABORT":
+                    print("Sign out cancelled.")
+                    continue
+
                 print("Signing out...")
                 os.remove(savedir + username + ".json")
                 print("Removed data.")
@@ -309,6 +316,7 @@ async def main():
                 print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
                 time.sleep(1)
                 exit(0)
+
 
         elif int(menuChoice) == 1:
             with open(("dataBase/idref.json"), "r") as f:
