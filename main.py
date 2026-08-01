@@ -14,12 +14,22 @@ idList = "dataBase/idref.json"
 idLog = "dataBase/idLog.json"
 
 os.makedirs(savedir, exist_ok=True)
-os.makedirs(os.path.dirname(idList), exist_ok=True)
-os.makedirs(os.path.dirname(idLog), exist_ok=True)
-with open(idList, 'w') as f:
-    print(f"{f} created")
-with open(idLog, 'w') as f:
-    print(f"{f} created")
+os.makedirs("dataBase", exist_ok=True)
+
+if not os.path.exists(idList):
+    with open(idList, "w") as f:
+        json.dump({}, f)
+
+if not os.path.exists(idLog):
+    with open(idLog, "w") as f:
+        json.dump({}, f)
+
+print("Initialized:")
+print("  savedir:", os.path.abspath(savedir))
+print("  idList:", os.path.abspath(idList))
+print("  idLog:", os.path.abspath(idLog))
+
+
 
 def hex_to_rgb(h):
     h = h.lstrip('#')
