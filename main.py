@@ -57,7 +57,7 @@ headers = {
 }
 
 
-def saveID(id_, key, identif, success):
+def saveID(id_, key, identif, success, username):
     if os.path.exists(idList):
         with open(idList, "r") as f:
             data = json.load(f)
@@ -76,7 +76,6 @@ def saveID(id_, key, identif, success):
     with open(idLog, "w") as f:
         json.dump(logData, f, indent=2)
 
-
 async def login(id_, username, password):
     body = json.dumps({
         "username": username,
@@ -93,11 +92,11 @@ async def login(id_, username, password):
                 result = (await resp.json())[0]
             except Exception as e:
                 print(e)
-                saveID(id_, key, identif, False)
+                saveID(id_, key, identif, "unexpected_response", username)
                 return {"success": False, "error": "unexpected_response"}
 
             if result.get("success") != 1:
-                saveID(id_, key, identif, False)
+                saveID(id_, key, identif, "invalid_credentials", username)
                 return {"success": False, "error": "invalid_credentials"}
 
             session_cookie = resp.cookies.get("scratchsessionsid")
@@ -112,7 +111,7 @@ async def login(id_, username, password):
     with open(savedir + username + ".json", "w") as file:
         json.dump(data, file, indent=2)
 
-    saveID(id_, key, identif, True)
+    saveID(id_, key, identif, "success", username)
     print("Authenticated!")
     return {
         "success": True,
@@ -154,11 +153,13 @@ async def getRepoList(id_, username):
         data = json.load(f)
 
         if not data.get("repos"):
-            saveID(id_, key, identif, False)
+            print(Fore.RED + "No repos... yet!" + Style.RESET_ALL)
+            time.sleep(1)
+            saveID(id_, key, identif, "no_repos", username)
             return {"success": False, "error": "no_repos"}
 
         else:
-            saveID(id_, key, identif, True)
+            saveID(id_, key, identif, "success", username)
 
 async def getProjectList(id_, username, **kwargs):
     url = f"https://api.scratch.mit.edu/users/{username}/projects"
@@ -172,14 +173,14 @@ async def getProjectList(id_, username, **kwargs):
                 projects = await resp.json()
             except Exception as e:
                 print(e)
-                saveID(id_, key, identif, False)
+                saveID(id_, key, identif, "unexpected_response", username)
                 return {"success": False, "error": "unexpected_response"}
 
     for p in projects:
         print(p.get("id"), p.get("title"))
 
     input("Press enter to go back.")
-    saveID(id_, key, identif, True)
+    saveID(id_, key, identif, "success", username)
     return {"success": True, "username": username, "projects": projects}
 
 funcs = {
@@ -221,8 +222,14 @@ async def main():
 
         else:
             with open((savedir + username + ".json"), "r") as f:
-                data = json.load(f)
-                password = data.get("password")
+                try:
+                    data = json.load(f)
+                    password = data.get("password")
+                except Exception:
+                    if not os.environ.get("PYCHARM_HOSTED"):
+                        password = getpass.getpass(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                    else:
+                        password = input(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
 
         with open(("dataBase/idref.json"), "r") as f:
             data = json.load(f)
@@ -266,6 +273,7 @@ async def main():
                 id_ = data.get("GRL")
 
             await getRepoList(id_, username)
+
 
         elif int(menuChoice) == 0:
             print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
