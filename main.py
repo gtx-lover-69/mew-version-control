@@ -18,18 +18,21 @@ os.makedirs("dataBase", exist_ok=True)
 
 if not os.path.exists(idList):
     with open(idList, "w") as f:
-        json.dump({}, f)
+        json.dump({"L":"0",
+                    "GPL":"0",
+                    "GRL":"0"
+                    }, f)
+        f.flush()
 
 if not os.path.exists(idLog):
     with open(idLog, "w") as f:
         json.dump({}, f)
+        f.flush()
 
 print("Initialized:")
 print("  savedir:", os.path.abspath(savedir))
 print("  idList:", os.path.abspath(idList))
 print("  idLog:", os.path.abspath(idLog))
-
-
 
 def hex_to_rgb(h):
     h = h.lstrip('#')
