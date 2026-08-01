@@ -12,6 +12,7 @@ from colorama import Fore, Style
 
 savedir = "dataBase/userData/"
 idList = "dataBase/idref.json"
+idLog = "dataBase/idLog.json"
 
 os.makedirs(savedir, exist_ok=True)
 os.makedirs(os.path.dirname(idList), exist_ok=True)
@@ -56,7 +57,7 @@ headers = {
 }
 
 
-def saveID(id_, key, identif):
+def saveID(id_, key, identif, success):
     if os.path.exists(idList):
         with open(idList, "r") as f:
             data = json.load(f)
@@ -68,6 +69,13 @@ def saveID(id_, key, identif):
     with open(idList, "w") as file:
         json.dump(data, file, indent=2)
 
+    if os.path.exists(idLog):
+        with open(idLog, "r") as f:
+            logData = json.load(f)
+    logData[key+identif] = success
+    with open(idLog, "w") as f:
+        json.dump(logData, f, indent=2)
+
 
 async def login(id_, username, password):
     body = json.dumps({
@@ -77,21 +85,22 @@ async def login(id_, username, password):
     })
 
     async with aiohttp.ClientSession() as session:
+        key = "L"
+        identif = str(int(re.sub(r'\D', '', id_)) + 1)
+
         async with session.post("https://scratch.mit.edu/login/", data=body, headers=headers) as resp:
             try:
                 result = (await resp.json())[0]
             except Exception as e:
                 print(e)
+                saveID(id_, key, identif, False)
                 return {"success": False, "error": "unexpected_response"}
 
             if result.get("success") != 1:
+                saveID(id_, key, identif, False)
                 return {"success": False, "error": "invalid_credentials"}
 
             session_cookie = resp.cookies.get("scratchsessionsid")
-
-    key = "L"
-    identif = str(int(re.sub(r'\D', '', id_)) + 1)
-    saveID(id_, key, identif)
 
     data = {
         "username": username,
@@ -103,6 +112,7 @@ async def login(id_, username, password):
     with open(savedir + username + ".json", "w") as file:
         json.dump(data, file, indent=2)
 
+    saveID(id_, key, identif, True)
     print("Authenticated!")
     return {
         "success": True,
@@ -136,11 +146,25 @@ async def repoGetData(id_, **kwargs):
 async def repoGetDataResponse(id_, **kwargs):
     return {"success": False, "error": "not_implemented"}
 
-async def getRepoList(id_, **kwargs):
-    return {"success": False, "error": "not_implemented"}
+async def getRepoList(id_, username):
+    key = "GRL"
+    identif = str(int(re.sub(r'\D', '', id_)) + 1)
+
+    with open(savedir + username + ".json") as f:
+        data = json.load(f)
+
+        if not data.get("repos"):
+            saveID(id_, key, identif, False)
+            return {"success": False, "error": "no_repos"}
+
+        else:
+            saveID(id_, key, identif, True)
 
 async def getProjectList(id_, username, **kwargs):
     url = f"https://api.scratch.mit.edu/users/{username}/projects"
+
+    key = "GRL"
+    identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url, params={"limit": 40}, timeout=aiohttp.ClientTimeout(total=20)) as resp:
@@ -148,15 +172,15 @@ async def getProjectList(id_, username, **kwargs):
                 projects = await resp.json()
             except Exception as e:
                 print(e)
+                saveID(id_, key, identif, False)
                 return {"success": False, "error": "unexpected_response"}
 
     for p in projects:
         print(p.get("id"), p.get("title"))
 
     input("Press enter to go back.")
-
+    saveID(id_, key, identif, True)
     return {"success": True, "username": username, "projects": projects}
-
 
 funcs = {
     "L": login,
@@ -171,15 +195,6 @@ funcs = {
     "GRL": getRepoList,
     "GPL": getProjectList,
 }
-
-
-def checkDataType(id_):
-    filtered = re.sub(r'\d', '', id_)
-    print(filtered)
-    if filtered == '' or filtered not in funcs:
-        return False
-    else:
-        return funcs[filtered]
 
 async def main():
     if not ping("scratch.mit.edu"):
@@ -217,10 +232,11 @@ async def main():
         try:
             result = await(login(id_, username, password))
         except Exception as e:
-            print("Error: " + e)
+            print("Error: " + str(e))
 
         if not result.get("success"):
             print(Fore.RED + "Could not authenticate." + Style.RESET_ALL)
+            os.remove(savedir + username + ".json")
             time.sleep(1)
         else:
             clear_screen()
@@ -249,7 +265,7 @@ async def main():
 
                 id_ = data.get("GRL")
 
-            await getProjectList(id_, username)
+            await getRepoList(id_, username)
 
         elif int(menuChoice) == 0:
             print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
