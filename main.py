@@ -138,29 +138,16 @@ async def login(id_, username, password):
         "token": result.get("token"),
     }
 
-
 async def repoCreate(id_, **kwargs):
-    return {"success": False, "error": "not_implemented"}
-
-async def repoCreateOK(id_, **kwargs):
     return {"success": False, "error": "not_implemented"}
 
 async def repoDelete(id_, **kwargs):
     return {"success": False, "error": "not_implemented"}
 
-async def repoDeleteOK(id_, **kwargs):
-    return {"success": False, "error": "not_implemented"}
-
 async def repoCommit(id_, **kwargs):
     return {"success": False, "error": "not_implemented"}
 
-async def repoCommitOK(id_, **kwargs):
-    return {"success": False, "error": "not_implemented"}
-
 async def repoGetData(id_, **kwargs):
-    return {"success": False, "error": "not_implemented"}
-
-async def repoGetDataResponse(id_, **kwargs):
     return {"success": False, "error": "not_implemented"}
 
 async def getRepoList(id_, username):
@@ -184,6 +171,9 @@ async def getRepoList(id_, username):
 
         else:
             clear_screen()
+            print(Style.BRIGHT + fg_hex("#ffb4cc", "Your repositories"))
+            for i in data.get("repos"):
+                print(i)
             saveID(id_, key, identif, "success", username)
 
 async def getProjectList(id_, username, **kwargs):
@@ -209,25 +199,10 @@ async def getProjectList(id_, username, **kwargs):
     saveID(id_, key, identif, "success", username)
     return {"success": True, "username": username, "projects": projects}
 
-funcs = {
-    "L": login,
-    "RC": repoCreate,
-    "RCOK": repoCreateOK,
-    "RD": repoDelete,
-    "RDOK": repoDeleteOK,
-    "RCM": repoCommit,
-    "RCMOK": repoCommitOK,
-    "RGD": repoGetData,
-    "RGDR": repoGetDataResponse,
-    "GRL": getRepoList,
-    "GPL": getProjectList,
-}
-
 async def main():
     clear_screen()
     if not ping("scratch.mit.edu"):
         print("Could not connect. Check your internet connection.")
-        exit(0)
     else:
         print(fg_hex("#9cff63", "Connected successfully"))
 
@@ -282,23 +257,23 @@ async def main():
     while True:
         clear_screen()
         print(Style.BRIGHT + fg_hex("#ffb4cc", "Welcome to Mew!"))
-        print("1. View your projects")
-        print("2. View your repos")
-        print("X. Sign out")
-        print("0. Exit")
+        print(Fore.WHITE + "1. View your projects")
+        print(Fore.WHITE + "2. View your repos")
+        print(Fore.WHITE + "X. Sign out")
+        print(Fore.WHITE + "0. Exit")
         menuChoice = input("> ")
         if menuChoice == "":
             print("Invalid choice. Try again.")
 
         elif menuChoice.upper().strip() == "X":
-            print(f"{Fore.RED}[WARNING] {Style.RESET_ALL} This will delete your password, token, and session ID from this machine.")
-            deleteChoice = input(f"{Fore.RED}[WARNING] {Style.RESET_ALL} Are you sure you want to sign out? {Style.DIM} [y/N] {Style.RESET_ALL}")
+            print(f"{Fore.RED}[WARNING]{Style.RESET_ALL} This will delete your password, token, and session ID from this machine.")
+            deleteChoice = input(f"{Fore.RED}[WARNING]{Style.RESET_ALL} Are you sure you want to sign out? {Style.DIM} [y/N] {Style.RESET_ALL}")
             if deleteChoice == "" or deleteChoice.upper().strip() == "N":
                 print("Alright!")
                 continue
             elif deleteChoice.upper().strip() == "Y":
                 while True:
-                    passAttempt = input('Please enter your password' + Style.DIM + '(or type "ABORT" to cancel): ' + Style.RESET_ALL)
+                    passAttempt = getpass.getpass('Please enter your password ' + Style.DIM + '(or type "ABORT" to cancel): ' + Style.RESET_ALL)
                     if passAttempt.upper() == "ABORT":
                         break
                     if passAttempt == password:
