@@ -4,7 +4,6 @@ import asyncio
 import re
 import aiohttp
 import os
-import sys
 import time
 import subprocess
 import getpass
@@ -236,6 +235,8 @@ async def main():
 
             id_ = data.get("L")
 
+        result = {"success": False}
+
         try:
             result = await(login(id_, username, password))
         except Exception as e:
@@ -253,6 +254,7 @@ async def main():
     while True:
         print("1. View your projects")
         print("2. View your repos")
+        print("X. Sign out")
         print("0. Exit")
         menuChoice = input("> ")
         if menuChoice == "":
