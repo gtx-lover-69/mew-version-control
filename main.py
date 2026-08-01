@@ -15,6 +15,11 @@ idLog = "dataBase/idLog.json"
 
 os.makedirs(savedir, exist_ok=True)
 os.makedirs(os.path.dirname(idList), exist_ok=True)
+os.makedirs(os.path.dirname(idLog), exist_ok=True)
+with open(idList, 'w') as f:
+    print(f"{f} created")
+with open(idLog, 'w') as f:
+    print(f"{f} created")
 
 def hex_to_rgb(h):
     h = h.lstrip('#')
@@ -34,6 +39,7 @@ def fg_hex(hex_color, text):
 def clear_screen ():
     if not os.environ.get("PYCHARM_HOSTED"):
         os.system('cls' if os.name == 'nt' else 'clear')
+clear_screen()
 
 def ping(site, count=3, timeout_s=1):
     print(f"Checking connection to {site}...")
@@ -153,14 +159,22 @@ async def getRepoList(id_, username):
 
         if not data.get("repos"):
             print(Fore.RED + "No repos... yet!" + Style.RESET_ALL)
-            time.sleep(1)
             saveID(id_, key, identif, "no_repos", username)
-            return {"success": False, "error": "no_repos"}
+            while True:
+                createChoice = input(f"Would you like to create one? {Style.DIM} [Y/n] {Style.RESET_ALL}")
+                if createChoice == "" or createChoice.upper().strip() == "Y":
+                    pass
+                elif createChoice.upper().strip() == "N":
+                    print("Alright!")
+                    time.sleep(1)
+                    return {"success": False, "error": "no_creation"}
 
         else:
+            clear_screen()
             saveID(id_, key, identif, "success", username)
 
 async def getProjectList(id_, username, **kwargs):
+    clear_screen()
     url = f"https://api.scratch.mit.edu/users/{username}/projects"
 
     key = "GRL"
@@ -197,6 +211,7 @@ funcs = {
 }
 
 async def main():
+    clear_screen()
     if not ping("scratch.mit.edu"):
         print("Could not connect. Check your internet connection.")
         exit(0)
