@@ -151,8 +151,13 @@ async def login(id_, username, password):
         "token": result.get("token"),
     }
 
-def signOut(id_, username, password):
+async def removeData(id_, password):
+    key = "RD"
+    identif = str(int(re.sub(r'\D', '', id_)) + 1)
+    print("This feature isn't available just yet. Check back in soon!")
+    saveID(id_, key, identif, "nonexistent")
 
+async def signOut(id_, username, password):
     key = "SO"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
@@ -383,12 +388,30 @@ async def main():
             print("Invalid choice. Try again.")
 
         elif menuChoice.upper().strip() == "S":
-            pass
-            with open(("dataBase/idref.json"), "r") as f:
-                data = json.load(f)
+            print(Fore.RED + Style.BRIGHT + "   [ DANGER ZONE ]" + Style.RESET_ALL)
+            print("1. Sign out")
+            print("2. Remove all data")
+            while True:
+                settingsChoice = input("> ")
+                if settingsChoice == "":
+                    print(Fore.RED + "Invalid choice.")
 
-                id_ = data.get("SO")
-            signOut(id_, username, password)
+                elif settingsChoice.strip() == "1":
+                    with open(("dataBase/idref.json"), "r") as f:
+                        data = json.load(f)
+
+                        id_ = data.get("SO")
+                    await signOut(id_, username, password)
+
+                elif settingsChoice.strip() == "2":
+                    with open(("dataBase/idref.json"), "r") as f:
+                        data = json.load(f)
+
+                        id_ = data.get("RD")
+                    await removeData(id_, password)
+
+                else:
+                    print("Invalid choice. ")
 
         elif menuChoice.strip() == "1":
             with open(("dataBase/idref.json"), "r") as f:
