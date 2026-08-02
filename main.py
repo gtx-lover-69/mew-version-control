@@ -12,27 +12,35 @@ from colorama import Fore, Style
 savedir = "dataBase/userData/"
 idList = "dataBase/idref.json"
 idLog = "dataBase/idLog.json"
+repoList = "dataBase/repos.json"
 
+print("Initialized:")
 os.makedirs(savedir, exist_ok=True)
+print("  savedir:", os.path.abspath(savedir))
 os.makedirs("dataBase", exist_ok=True)
 
 if not os.path.exists(idList):
     with open(idList, "w") as f:
         json.dump({"L":"0",
                     "GPL":"0",
-                    "GRL":"0"
+                    "GRL":"0",
+                    "RC":"0",
+                    "SO":"0"
                     }, f)
         f.flush()
+print("  idList:", os.path.abspath(idList))
 
 if not os.path.exists(idLog):
     with open(idLog, "w") as f:
         json.dump({}, f)
         f.flush()
-
-print("Initialized:")
-print("  savedir:", os.path.abspath(savedir))
-print("  idList:", os.path.abspath(idList))
 print("  idLog:", os.path.abspath(idLog))
+
+if not os.path.exists(repoList):
+    with open(repoList, "w") as f:
+        json.dump({}, f)
+        f.flush()
+print("  repoList:", os.path.abspath(repoList))
 
 def hex_to_rgb(h):
     h = h.lstrip('#')
@@ -74,8 +82,7 @@ headers = {
     "Content-Type": "application/json",
 }
 
-
-def saveID(id_, key, identif, success, username):
+def saveID(id_, key, identif, success):
     if os.path.exists(idList):
         with open(idList, "r") as f:
             data = json.load(f)
@@ -90,7 +97,13 @@ def saveID(id_, key, identif, success, username):
     if os.path.exists(idLog):
         with open(idLog, "r") as f:
             logData = json.load(f)
-    logData[key+identif] = success
+
+    logData.setdefault(key, []).append({
+        "id": identif,
+        "status": success,
+        "time": time.time()
+    })
+
     with open(idLog, "w") as f:
         json.dump(logData, f, indent=2)
 
@@ -110,11 +123,11 @@ async def login(id_, username, password):
                 result = (await resp.json())[0]
             except Exception as e:
                 print(e)
-                saveID(id_, key, identif, "unexpected_response", username)
+                saveID(id_, key, identif, "unexpected_response")
                 return {"success": False, "error": "unexpected_response"}
 
             if result.get("success") != 1:
-                saveID(id_, key, identif, "invalid_credentials", username)
+                saveID(id_, key, identif, "invalid_credentials")
                 return {"success": False, "error": "invalid_credentials"}
 
             session_cookie = resp.cookies.get("scratchsessionsid")
@@ -129,7 +142,7 @@ async def login(id_, username, password):
     with open(savedir + username + ".json", "w") as file:
         json.dump(data, file, indent=2)
 
-    saveID(id_, key, identif, "success", username)
+    saveID(id_, key, identif, "success")
     print("Authenticated!")
     return {
         "success": True,
@@ -138,8 +151,105 @@ async def login(id_, username, password):
         "token": result.get("token"),
     }
 
-async def repoCreate(id_, **kwargs):
-    return {"success": False, "error": "not_implemented"}
+def signOut(id_, username, password):
+
+    key = "SO"
+    identif = str(int(re.sub(r'\D', '', id_)) + 1)
+
+    while True:
+        print(f"{Fore.RED}[WARNING]{Style.RESET_ALL} This will delete your password, token, and session ID from this machine.")
+        deleteChoice = input(f"{Fore.RED}[WARNING]{Style.RESET_ALL} Are you sure you want to sign out? {Style.DIM} [y/N] {Style.RESET_ALL}")
+        if deleteChoice == "" or deleteChoice.upper().strip() == "N":
+            print("Alright!")
+            break
+        elif deleteChoice.upper().strip() == "Y":
+            while True:
+                passAttempt = getpass.getpass(
+                    'Please enter your password ' + Style.DIM + '(or type "ABORT" to cancel): ' + Style.RESET_ALL)
+                if passAttempt.upper() == "ABORT":
+                    break
+                if passAttempt == password:
+                    break
+                print(Fore.RED + "Incorrect password." + Style.RESET_ALL)
+
+            if passAttempt.strip() == "ABORT":
+                print("Sign out cancelled.")
+                break
+
+            print("Signing out...")
+            os.remove(savedir + username + ".json")
+            saveID(id_, key, identif, "success")
+            print("Removed data.")
+            clear_screen()
+            print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
+            time.sleep(1)
+            exit(0)
+
+async def repoCreate(id_, username):
+    while True:
+        while True:
+            print("What is the ID of the project you want to create a repository for? ")
+            projectID = input(Style.DIM + "(Must be public and owned by you) " + Style.RESET_ALL + "> ").strip()
+            if not projectID.isdigit():
+                print(Fore.RED + "Please enter a valid ID." + Style.RESET_ALL)
+            else:
+                projectID = int(projectID)
+                break
+
+        url = f"https://api.scratch.mit.edu/users/{username}/projects"
+        key = "RC"
+        identif = str(int(re.sub(r'\D', '', id_)) + 1)
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params={"limit": 40}, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                try:
+                    projects = await resp.json()
+                except Exception as e:
+                    print(e)
+                    saveID(id_, key, identif, "unexpected_response")
+                    return {"success": False, "error": "unexpected_response"}
+
+        project_ids = {p["id"] for p in projects}
+
+        if not projectID in project_ids:
+            print(Fore.RED + "Project ID not found. Make sure that you have published this project." + Style.RESET_ALL)
+            time.sleep(1)
+        else:
+            async def get_project_info(project_id):
+                url = f"https://api.scratch.mit.edu/projects/{project_id}"
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as resp:
+                        resp.raise_for_status()
+                        return await resp.json()
+
+            projectInfo = await get_project_info(projectID)
+            projectName = projectInfo["title"]
+            projectToken = projectInfo["project_token"]
+            print(Fore.BLUE + "Creating repository for " + projectName + Style.RESET_ALL)
+            url = f"https://projects.scratch.mit.edu/{projectID}?token={projectToken}"
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    data = await resp.json(content_type=None)
+
+            with open(repoList, "r") as f:
+                repos = json.load(f)
+
+            repos[str(projectName)] = {
+                "owner": username,
+                "project_id": projectID,
+                "project_token": projectToken,
+                "project": data
+            }
+
+            with open(repoList, "w") as f:
+                json.dump(repos, f, indent=2)
+
+            saveID(id_, key, identif, "success")
+            print(Style.BRIGHT + fg_hex("#9cff63", "Repo created!"))
+            input("Press enter to go back. ")
+            break
 
 async def repoDelete(id_, **kwargs):
     return {"success": False, "error": "not_implemented"}
@@ -154,27 +264,34 @@ async def getRepoList(id_, username):
     key = "GRL"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
-    with open(savedir + username + ".json") as f:
-        data = json.load(f)
+    with open(repoList) as f:
+        repos = json.load(f)
 
-        if not data.get("repos"):
-            print(Fore.RED + "No repos... yet!" + Style.RESET_ALL)
-            saveID(id_, key, identif, "no_repos", username)
-            while True:
-                createChoice = input(f"Would you like to create one? {Style.DIM} [Y/n] {Style.RESET_ALL}")
-                if createChoice == "" or createChoice.upper().strip() == "Y":
-                    pass
-                elif createChoice.upper().strip() == "N":
-                    print("Alright!")
-                    time.sleep(1)
-                    return {"success": False, "error": "no_creation"}
+    if not repos:
+        print(Fore.RED + "No repos... yet!" + Style.RESET_ALL)
+        saveID(id_, key, identif, "no_repos")
+        while True:
+            createChoice = input(f"Would you like to create one? {Style.DIM}[Y/n] {Style.RESET_ALL}")
+            if createChoice == "" or createChoice.upper().strip() == "Y":
+                with open(("dataBase/idref.json"), "r") as f:
+                    data = json.load(f)
 
-        else:
-            clear_screen()
-            print(Style.BRIGHT + fg_hex("#ffb4cc", "Your repositories"))
-            for i in data.get("repos"):
-                print(i)
-            saveID(id_, key, identif, "success", username)
+                    id_ = data.get("RC")
+                await repoCreate(id_, username)
+                break
+            elif createChoice.upper().strip() == "N":
+                print("Alright!")
+                time.sleep(1)
+                saveID(id_, key, identif, "cancelled")
+                return {"success": False, "error": "no_creation"}
+
+    else:
+        clear_screen()
+        print(Style.BRIGHT + fg_hex("#ffb4cc", "Your repositories"))
+        for i in repos:
+            print(i)
+            input("Press enter to go back. ")
+            saveID(id_, key, identif, "success")
 
 async def getProjectList(id_, username, **kwargs):
     clear_screen()
@@ -189,14 +306,14 @@ async def getProjectList(id_, username, **kwargs):
                 projects = await resp.json()
             except Exception as e:
                 print(e)
-                saveID(id_, key, identif, "unexpected_response", username)
+                saveID(id_, key, identif, "unexpected_response")
                 return {"success": False, "error": "unexpected_response"}
 
     for p in projects:
-        print(p.get("id"), p.get("title"))
+        print(p.get("id"), "|", p.get("title"))
 
     input("Press enter to go back.")
-    saveID(id_, key, identif, "success", username)
+    saveID(id_, key, identif, "success")
     return {"success": True, "username": username, "projects": projects}
 
 async def main():
@@ -257,43 +374,23 @@ async def main():
     while True:
         clear_screen()
         print(Style.BRIGHT + fg_hex("#ffb4cc", "Welcome to Mew!"))
-        print(Fore.WHITE + "1. View your projects")
-        print(Fore.WHITE + "2. View your repos")
-        print(Fore.WHITE + "X. Sign out")
-        print(Fore.WHITE + "0. Exit")
+        print("1. View your projects")
+        print("2. View your repos")
+        print("S. Settings")
+        print("0. Exit")
         menuChoice = input("> ")
         if menuChoice == "":
             print("Invalid choice. Try again.")
 
-        elif menuChoice.upper().strip() == "X":
-            print(f"{Fore.RED}[WARNING]{Style.RESET_ALL} This will delete your password, token, and session ID from this machine.")
-            deleteChoice = input(f"{Fore.RED}[WARNING]{Style.RESET_ALL} Are you sure you want to sign out? {Style.DIM} [y/N] {Style.RESET_ALL}")
-            if deleteChoice == "" or deleteChoice.upper().strip() == "N":
-                print("Alright!")
-                continue
-            elif deleteChoice.upper().strip() == "Y":
-                while True:
-                    passAttempt = getpass.getpass('Please enter your password ' + Style.DIM + '(or type "ABORT" to cancel): ' + Style.RESET_ALL)
-                    if passAttempt.upper() == "ABORT":
-                        break
-                    if passAttempt == password:
-                        break
-                    print(Fore.RED + "Incorrect password." + Style.RESET_ALL)
+        elif menuChoice.upper().strip() == "S":
+            pass
+            with open(("dataBase/idref.json"), "r") as f:
+                data = json.load(f)
 
-                if passAttempt.strip() == "ABORT":
-                    print("Sign out cancelled.")
-                    continue
+                id_ = data.get("SO")
+            signOut(id_, username, password)
 
-                print("Signing out...")
-                os.remove(savedir + username + ".json")
-                print("Removed data.")
-                clear_screen()
-                print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
-                time.sleep(1)
-                exit(0)
-
-
-        elif int(menuChoice) == 1:
+        elif menuChoice.strip() == "1":
             with open(("dataBase/idref.json"), "r") as f:
                 data = json.load(f)
 
@@ -301,7 +398,7 @@ async def main():
 
             await getProjectList(id_, username)
 
-        elif int(menuChoice) == 2:
+        elif menuChoice.strip() == "2":
             with open(("dataBase/idref.json"), "r") as f:
                 data = json.load(f)
 
@@ -310,7 +407,7 @@ async def main():
             await getRepoList(id_, username)
 
 
-        elif int(menuChoice) == 0:
+        elif menuChoice.strip() == "0":
             print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
             time.sleep(1)
             exit(0)
