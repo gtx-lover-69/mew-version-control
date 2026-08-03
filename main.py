@@ -4,6 +4,7 @@ import re
 import aiohttp
 import os
 import time
+from datetime import  datetime
 import subprocess
 import getpass
 from colorama import Fore, Style
@@ -12,6 +13,7 @@ savedir = "dataBase/userData/"
 idList = "dataBase/idref.json"
 idLog = "dataBase/idLog.json"
 repoList = "dataBase/repos.json"
+checkList = "dataBase/checklist.json"
 
 print("Initialized:")
 os.makedirs(savedir, exist_ok=True)
@@ -25,7 +27,8 @@ if not os.path.exists(idList):
                     "GRL":"0",
                     "RC":"0",
                     "SO":"0",
-                    "GRD":"0"
+                    "GRD":"0",
+                    "CHC":"0"
                     }, f)
         f.flush()
 print("  idList:", os.path.abspath(idList))
@@ -41,6 +44,12 @@ if not os.path.exists(repoList):
         json.dump({}, f)
         f.flush()
 print("  repoList:", os.path.abspath(repoList))
+
+if not os.path.exists(checkList):
+    with open(checkList, "w") as f:
+        json.dump({}, f)
+        f.flush()
+print("  checkList:", os.path.abspath(checkList))
 
 def hex_to_rgb(h):
     h = h.lstrip('#')
@@ -194,7 +203,7 @@ async def signOut(id_, username, password):
             time.sleep(1)
             exit(0)
 
-async def repoCreate(id_, username):
+async def repoCreate(id_, username, isCheck):
     while True:
         while True:
             print("What is the ID of the project you want to create a repository for? ")
@@ -242,13 +251,18 @@ async def repoCreate(id_, username):
                 async with session.get(url) as resp:
                     data = await resp.json(content_type=None)
 
-            with open(repoList, "r") as f:
-                repos = json.load(f)
+                with open(repoList, "r") as f:
+                    repos = json.load(f)
+
+            timestamp = time.time()
+
+            trueTime = str(datetime.fromtimestamp(timestamp))
 
             repos[str(projectName)] = {
                 "owner": username,
                 "project_id": projectID,
                 "project_token": projectToken,
+                "last_updated": trueTime,
                 "project": data
             }
 
@@ -260,17 +274,117 @@ async def repoCreate(id_, username):
             input("Press enter to go back. ")
             break
 
+async def checkHasChanges(id_, projectID, username):
+    key = "CHC"
+    identif = str(int(re.sub(r'\D', '', id_)) + 1)
+
+    url = f"https://api.scratch.mit.edu/projects/{projectID}"
+
+    async def get_project_info(project_id):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+
+    projectInfo = await get_project_info(projectID)
+    projectName = projectInfo["title"]
+    projectToken = projectInfo["project_token"]
+    print("Validating " + projectName + Style.RESET_ALL)
+    url = f"https://projects.scratch.mit.edu/{projectID}?token={projectToken}"
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            data = await resp.json(content_type=None)
+
+        with open(checkList, "r") as f:
+            repos = json.load(f)
+
+    timestamp = time.time()
+
+    trueTime = str(datetime.fromtimestamp(timestamp))
+
+    repos[str(projectName)] = {
+        "owner": username,
+        "project_id": projectID,
+        "project_token": projectToken,
+        "last_updated": trueTime,
+        "project": data
+    }
+
+    with open(checkList, "w") as f:
+        json.dump(repos, f, indent=2)
+
+    with open(checkList, "r") as f:
+        new = json.load(f)
+
+    with open(repoList, "r") as f:
+        oldData = json.load(f)
+
+    old = oldData[projectName]
+    new = new[projectName]
+
+    def diff_changes(old, new):
+        # removed keys are marked with {"__removed__": true}
+        if old == new:
+            return {}
+
+        # dict vs dict: recurse
+        if isinstance(old, dict) and isinstance(new, dict):
+            out = {}
+            old_keys = set(old.keys())
+            new_keys = set(new.keys())
+
+            # added/changed
+            for k in new_keys:
+                if k not in old:
+                    out[k] = new[k]  # added
+                else:
+                    sub = diff_changes(old[k], new[k])
+                    if sub != {}:
+                        out[k] = sub  # changed
+
+            # removed
+            for k in old_keys - new_keys:
+                out[k] = {"__removed__": True}
+
+            return out
+
+        # lists / primitives: replace whole value if different
+        return new
+
+    changes = diff_changes(old, new)
+
+    with open("changes.json", "w", encoding="utf-8") as f:
+        json.dump(changes, f, indent=2, ensure_ascii=False)
+        f.flush()
+
+    with open("changes.json", "r") as f:
+        data = json.load(f)
+
+    return str(data)
+
 async def repoDelete(id_, **kwargs):
     return {"success": False, "error": "not_implemented"}
 
 async def repoCommit(id_, **kwargs):
     return {"success": False, "error": "not_implemented"}
 
-async def repoGetData(id_, projectID):
+async def repoGetData(id_, projectName, projectID, username):
     key = "GRD"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
-    print(projectID)
+    print(Style.BRIGHT + fg_hex("#ffb4cc",projectName))
+    with open(repoList) as f:
+        repos = json.load(f)
+
+    print(Style.BRIGHT + Fore.BLUE + "Owner: " ,Style.RESET_ALL,repos[projectName].get("owner"))
+    with open("dataBase/idref.json", "r") as f:
+        data = json.load(f)
+        id_ = data.get("CHC")
+
+    print(Style.BRIGHT,Fore.BLUE,"Changes: ",Style.RESET_ALL,await checkHasChanges(id_, projectID, username))
+    os.remove("changes.json")
+    os.remove(checkList)
 
 async def getRepoList(id_, username):
     key = "GRL"
@@ -289,7 +403,7 @@ async def getRepoList(id_, username):
                     data = json.load(f)
 
                     id_ = data.get("RC")
-                await repoCreate(id_, username)
+                await repoCreate(id_, username, False)
                 break
             elif createChoice.upper().strip() == "N":
                 print("Alright!")
@@ -302,7 +416,7 @@ async def getRepoList(id_, username):
         print(Style.BRIGHT + fg_hex("#ffb4cc", "Your repositories"))
         width = max(len(str(repos[i].get("project_id"))) for i in repos)
         for i in repos:
-            print(f"{repos[i].get('project_id'):>{width}} │ {Style.BRIGHT}{i}{Style.RESET_ALL}")
+            print(f"{repos[i].get('project_id'):>{width}} │ {Style.BRIGHT}{i}{Style.RESET_ALL} │ Last updated: {repos[i].get('last_updated')}")
 
         openRepoChoice = input("Input a repository ID to edit it, or press enter to go back. ")
         if openRepoChoice == "":
@@ -311,13 +425,18 @@ async def getRepoList(id_, username):
 
         elif openRepoChoice.strip().isdigit():
             projectID = int(openRepoChoice.strip())
-            if projectID in (repos[i].get("project_id") for i in repos):
+            for projectName, projectData in repos.items():
+                if projectData.get("project_id") == projectID:
+                    with open("dataBase/idref.json", "r") as f:
+                        data = json.load(f)
+                        id_ = data.get("GRD")
 
-                with open(("dataBase/idref.json"), "r") as f:
-                    data = json.load(f)
-
-                    id_ = data.get("GRD")
-                await repoGetData(id_, projectID)
+                    await repoGetData(id_, projectName, projectID, username)
+                    break
+            else:
+                print(Fore.RED + "Couldn't find project :(")
+                saveID(id_, key, identif, "could_not_find")
+                return {"success": False, "error": "could_not_find"}
 
         else:
             print("Invalid choice, exiting.")
@@ -352,9 +471,11 @@ async def getProjectList(id_, username):
 async def main():
     clear_screen()
     if not ping("scratch.mit.edu"):
-        print("Could not connect. Check your internet connection.")
+        print(Fore.RED + "Could not connect. Check your internet connection.")
+        time.sleep(3)
     else:
         print(fg_hex("#9cff63", "Connected successfully"))
+        time.sleep(0.1)
 
     clear_screen()
     while True:
