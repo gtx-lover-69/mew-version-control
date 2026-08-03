@@ -1,4 +1,3 @@
-import base64
 import json
 import asyncio
 import re
@@ -25,7 +24,8 @@ if not os.path.exists(idList):
                     "GPL":"0",
                     "GRL":"0",
                     "RC":"0",
-                    "SO":"0"
+                    "SO":"0",
+                    "GRD":"0"
                     }, f)
         f.flush()
 print("  idList:", os.path.abspath(idList))
@@ -99,7 +99,7 @@ def saveID(id_, key, identif, success):
             logData = json.load(f)
 
     logData.setdefault(key, []).append({
-        "id": identif,
+        "id": key+identif,
         "status": success,
         "time": time.time()
     })
@@ -166,11 +166,14 @@ async def signOut(id_, username, password):
         deleteChoice = input(f"{Fore.RED}[WARNING]{Style.RESET_ALL} Are you sure you want to sign out? {Style.DIM} [y/N] {Style.RESET_ALL}")
         if deleteChoice == "" or deleteChoice.upper().strip() == "N":
             print("Alright!")
-            break
+            saveID(id_, key, identif, "user_cancelled")
+            return {"success": False, "error": "user_cancelled"}
         elif deleteChoice.upper().strip() == "Y":
             while True:
-                passAttempt = getpass.getpass(
-                    'Please enter your password ' + Style.DIM + '(or type "ABORT" to cancel): ' + Style.RESET_ALL)
+                if not os.environ.get("PYCHARM_HOSTED"):
+                    passAttempt = getpass.getpass(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                else:
+                    passAttempt = input(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
                 if passAttempt.upper() == "ABORT":
                     break
                 if passAttempt == password:
@@ -179,7 +182,8 @@ async def signOut(id_, username, password):
 
             if passAttempt.strip() == "ABORT":
                 print("Sign out cancelled.")
-                break
+                saveID(id_, key, identif, "user_cancelled")
+                return {"success": False, "error": "user_cancelled"}
 
             print("Signing out...")
             os.remove(savedir + username + ".json")
@@ -262,8 +266,11 @@ async def repoDelete(id_, **kwargs):
 async def repoCommit(id_, **kwargs):
     return {"success": False, "error": "not_implemented"}
 
-async def repoGetData(id_, **kwargs):
-    return {"success": False, "error": "not_implemented"}
+async def repoGetData(id_, projectID):
+    key = "GRD"
+    identif = str(int(re.sub(r'\D', '', id_)) + 1)
+
+    print(projectID)
 
 async def getRepoList(id_, username):
     key = "GRL"
@@ -293,12 +300,31 @@ async def getRepoList(id_, username):
     else:
         clear_screen()
         print(Style.BRIGHT + fg_hex("#ffb4cc", "Your repositories"))
+        width = max(len(str(repos[i].get("project_id"))) for i in repos)
         for i in repos:
-            print(i)
-            input("Press enter to go back. ")
-            saveID(id_, key, identif, "success")
+            print(f"{repos[i].get('project_id'):>{width}} │ {Style.BRIGHT}{i}{Style.RESET_ALL}")
 
-async def getProjectList(id_, username, **kwargs):
+        openRepoChoice = input("Input a repository ID to edit it, or press enter to go back. ")
+        if openRepoChoice == "":
+            saveID(id_, key, identif, "viewed_and_left")
+            return {"success": True, "error": "viewed_and_left"}
+
+        elif openRepoChoice.strip().isdigit():
+            projectID = int(openRepoChoice.strip())
+            if projectID in (repos[i].get("project_id") for i in repos):
+
+                with open(("dataBase/idref.json"), "r") as f:
+                    data = json.load(f)
+
+                    id_ = data.get("GRD")
+                await repoGetData(id_, projectID)
+
+        else:
+            print("Invalid choice, exiting.")
+            saveID(id_, key, identif, "invalid_response")
+            return {"success": False, "error": "invalid_response"}
+
+async def getProjectList(id_, username):
     clear_screen()
     url = f"https://api.scratch.mit.edu/users/{username}/projects"
 
@@ -306,7 +332,7 @@ async def getProjectList(id_, username, **kwargs):
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, params={"limit": 40}, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=20)) as resp:
             try:
                 projects = await resp.json()
             except Exception as e:
@@ -314,10 +340,12 @@ async def getProjectList(id_, username, **kwargs):
                 saveID(id_, key, identif, "unexpected_response")
                 return {"success": False, "error": "unexpected_response"}
 
-    for p in projects:
-        print(p.get("id"), "|", p.get("title"))
+    width = max(len(str(p.get("id"))) for p in projects)
 
-    input("Press enter to go back.")
+    for p in projects:
+        print(f"{p.get('id'):>{width}} │ {Style.BRIGHT}{p.get('title')}{Style.RESET_ALL}")
+
+    input("Press enter to go back. ")
     saveID(id_, key, identif, "success")
     return {"success": True, "username": username, "projects": projects}
 
@@ -375,7 +403,6 @@ async def main():
             clear_screen()
             break
 
-
     while True:
         clear_screen()
         print(Style.BRIGHT + fg_hex("#ffb4cc", "Welcome to Mew!"))
@@ -387,7 +414,9 @@ async def main():
         if menuChoice == "":
             print("Invalid choice. Try again.")
 
+        # Settings
         elif menuChoice.upper().strip() == "S":
+            clear_screen()
             print(Fore.RED + Style.BRIGHT + "   [ DANGER ZONE ]" + Style.RESET_ALL)
             print("1. Sign out")
             print("2. Remove all data")
@@ -413,6 +442,7 @@ async def main():
                 else:
                     print("Invalid choice. ")
 
+        # Get project list
         elif menuChoice.strip() == "1":
             with open(("dataBase/idref.json"), "r") as f:
                 data = json.load(f)
@@ -421,6 +451,7 @@ async def main():
 
             await getProjectList(id_, username)
 
+        # Get repo list
         elif menuChoice.strip() == "2":
             with open(("dataBase/idref.json"), "r") as f:
                 data = json.load(f)
@@ -429,7 +460,7 @@ async def main():
 
             await getRepoList(id_, username)
 
-
+        # Exit
         elif menuChoice.strip() == "0":
             print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
             time.sleep(1)
@@ -437,21 +468,6 @@ async def main():
 
         else:
             print("Invalid choice")
-
-def decoder(text):
-    directory = 'dataBase/'
-    with open(directory + text, "r") as f:
-        b64_content = f.read().strip()
-
-    decoded_bytes = base64.b64decode(b64_content)
-    decoded_str = decoded_bytes.decode("utf-8")
-
-    data = json.loads(decoded_str)
-
-    print(data)
-
-    with open(directory + "output.json", "w") as f:
-        json.dump(data, f, indent=2)
 
 if __name__ == "__main__":
     asyncio.run(main())
