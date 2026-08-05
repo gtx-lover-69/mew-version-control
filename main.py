@@ -1,6 +1,8 @@
 import json
 import asyncio
 import re
+from logging import exception
+
 import aiohttp
 import os
 import time
@@ -289,7 +291,6 @@ async def checkHasChanges(id_, projectID, username):
     projectInfo = await get_project_info(projectID)
     projectName = projectInfo["title"]
     projectToken = projectInfo["project_token"]
-    print("Validating " + projectName + Style.RESET_ALL)
     url = f"https://projects.scratch.mit.edu/{projectID}?token={projectToken}"
 
     async with aiohttp.ClientSession() as session:
@@ -299,15 +300,10 @@ async def checkHasChanges(id_, projectID, username):
         with open(checkList, "r") as f:
             repos = json.load(f)
 
-    timestamp = time.time()
-
-    trueTime = str(datetime.fromtimestamp(timestamp))
-
     repos[str(projectName)] = {
         "owner": username,
         "project_id": projectID,
         "project_token": projectToken,
-        "last_updated": trueTime,
         "project": data
     }
 
@@ -361,30 +357,99 @@ async def checkHasChanges(id_, projectID, username):
     with open("changes.json", "r") as f:
         data = json.load(f)
 
-    return str(data)
+    return data
 
-async def repoDelete(id_, **kwargs):
-    return {"success": False, "error": "not_implemented"}
+async def repoDelete(id_, projectName):
+    key = "RD"
+    identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
-async def repoCommit(id_, **kwargs):
-    return {"success": False, "error": "not_implemented"}
+    try:
+        with open(repoList[projectName]) as f:
+            json.dump({}, f, indent=2)
+            saveID(id_, key, identif, "deleted")
+    except Exception as e:
+        print(Fore.RED + "Error: " + e)
+        saveID(id_, key, identif, "no_delete")
+
+
+async def repoCommit(id_, projectName):
+    key = "RCM"
+    identif = str(int(re.sub(r'\D', '', id_)) + 1)
+
+    while True:
+        msg = input("Enter a commit message: ")
+        if msg == "":
+            print("Invalid input.")
+        else:
+            break
+
+    with open(repoList) as f:
+        local = json.load(f)
+    with open(checkList) as f:
+        checked = json.load(f)
+    local[projectName] = checked[projectName]
+    with open(repoList, "w") as f:
+        json.dump(local, f, indent=2)
+        f.flush()
+    os.remove(checkList)
+    saveID(id_, key, identif, f"committed: {msg}")
 
 async def repoGetData(id_, projectName, projectID, username):
+    clear_screen()
     key = "GRD"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
+    print("Retrieving data...")
+    changes = await checkHasChanges(id_, projectID, username)
+    clear_screen()
     print(Style.BRIGHT + fg_hex("#ffb4cc",projectName))
     with open(repoList) as f:
         repos = json.load(f)
 
-    print(Style.BRIGHT + Fore.BLUE + "Owner: " ,Style.RESET_ALL,repos[projectName].get("owner"))
+    print(Style.BRIGHT + Fore.BLUE + "  Owner: " ,Style.RESET_ALL,repos[projectName].get("owner"))
     with open("dataBase/idref.json", "r") as f:
         data = json.load(f)
         id_ = data.get("CHC")
 
-    print(Style.BRIGHT,Fore.BLUE,"Changes: ",Style.RESET_ALL,await checkHasChanges(id_, projectID, username))
+    print(Style.BRIGHT,Fore.BLUE,"Changes:",Style.RESET_ALL,Style.DIM,"Type " + Style.BRIGHT + "view " + Style.RESET_ALL + "to view changes")
+    changeInput = input("> ")
+    if changeInput.upper().strip() == "VIEW":
+        print(json.dumps(changes, indent=2))
+        input("Press enter to continue.")
+
     os.remove("changes.json")
-    os.remove(checkList)
+
+    clear_screen()
+    print(Style.BRIGHT + fg_hex("#ffb4cc",projectName))
+    print("What would you like to do?")
+    print("1. Commit changes locally")
+    print("2. Delete repository")
+    choice = input("> ")
+    if choice.strip() == "1":
+        if not changes:
+            print(Fore.RED + "Nothing to commit.")
+            saveID(id_, key, identif, "no_commit")
+            return
+        else:
+            with open("dataBase/idref.json", "r") as f:
+                data = json.load(f)
+                id_ = data.get("RC")
+
+            await repoCommit(id_, projectName)
+    elif choice.strip() == "2":
+        deleteChoice = input(Fore.RED + Style.BRIGHT + "Are you sure you want to delete this repository?" + Style.RESET_ALL + Style.DIM + "[y/N] ")
+        if deleteChoice == "" or deleteChoice.upper().strip() == "N":
+            saveID(id_, key, identif, "no_delete")
+            print("Alright!")
+        elif deleteChoice.upper().strip() == "Y":
+            with open("dataBase/idref.json", "r") as f:
+                data = json.load(f)
+                id_ = data.get("RD")
+
+            await repoDelete(id_, projectName)
+    else:
+        print(Fore.RED + "Invalid choice.")
+        time.sleep(0.2)
 
 async def getRepoList(id_, username):
     key = "GRL"
@@ -402,7 +467,7 @@ async def getRepoList(id_, username):
                 with open(("dataBase/idref.json"), "r") as f:
                     data = json.load(f)
 
-                    id_ = data.get("RC")
+                    id_ = data.get("RCM")
                 await repoCreate(id_, username, False)
                 break
             elif createChoice.upper().strip() == "N":
@@ -533,7 +598,7 @@ async def main():
         print("0. Exit")
         menuChoice = input("> ")
         if menuChoice == "":
-            print("Invalid choice. Try again.")
+            print(Fore.RED + "Invalid choice. Try again." + Style.RESET_ALL)
 
         # Settings
         elif menuChoice.upper().strip() == "S":
@@ -561,7 +626,7 @@ async def main():
                     await removeData(id_, password)
 
                 else:
-                    print("Invalid choice. ")
+                    print(Fore.RED + "Invalid choice. ")
 
         # Get project list
         elif menuChoice.strip() == "1":
