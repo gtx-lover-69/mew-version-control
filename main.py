@@ -1,8 +1,6 @@
 import json
 import asyncio
 import re
-from logging import exception
-
 import aiohttp
 import os
 import time
@@ -16,6 +14,7 @@ idList = "dataBase/idref.json"
 idLog = "dataBase/idLog.json"
 repoList = "dataBase/repos.json"
 checkList = "dataBase/checklist.json"
+commitIndex = "dataBase/commitIndex.json"
 
 print("Initialized:")
 os.makedirs(savedir, exist_ok=True)
@@ -30,7 +29,10 @@ if not os.path.exists(idList):
                     "RC":"0",
                     "SO":"0",
                     "GRD":"0",
-                    "CHC":"0"
+                    "CHC":"0",
+                    "RD":"0",
+                    "RM":"0",
+                    "RCM":"0"
                     }, f)
         f.flush()
 print("  idList:", os.path.abspath(idList))
@@ -52,6 +54,12 @@ if not os.path.exists(checkList):
         json.dump({}, f)
         f.flush()
 print("  checkList:", os.path.abspath(checkList))
+
+if not os.path.exists(commitIndex):
+    with open(commitIndex, "w") as f:
+        json.dump({}, f)
+        f.flush()
+print("  commitIndex:", os.path.abspath(commitIndex))
 
 def hex_to_rgb(h):
     h = h.lstrip('#')
@@ -167,6 +175,7 @@ async def removeData(id_, password):
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
     print("This feature isn't available just yet. Check back in soon!")
     saveID(id_, key, identif, "nonexistent")
+    return
 
 async def signOut(id_, username, password):
     key = "SO"
@@ -368,16 +377,16 @@ async def repoDelete(id_, projectName):
             json.dump({}, f, indent=2)
             saveID(id_, key, identif, "deleted")
     except Exception as e:
-        print(Fore.RED + "Error: " + e)
+        print(Fore.RED + "Error: " + str(e))
         saveID(id_, key, identif, "no_delete")
 
 
-async def repoCommit(id_, projectName):
+async def repoCommit(id_, projectName, projectData):
     key = "RCM"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
     while True:
-        msg = input("Enter a commit message: ")
+        msg = input("Enter a commit message: ").strip("\n")
         if msg == "":
             print("Invalid input.")
         else:
@@ -391,7 +400,18 @@ async def repoCommit(id_, projectName):
     with open(repoList, "w") as f:
         json.dump(local, f, indent=2)
         f.flush()
-    os.remove(checkList)
+
+    data = {
+        "id":key+identif,
+        "project_name": projectName,
+        "message":msg,
+        "data": projectData
+    }
+
+    with open(commitIndex, "w") as f:
+        json.dump(data, f, indent=2)
+        f.flush()
+
     saveID(id_, key, identif, f"committed: {msg}")
 
 async def repoGetData(id_, projectName, projectID, username):
@@ -433,9 +453,13 @@ async def repoGetData(id_, projectName, projectID, username):
         else:
             with open("dataBase/idref.json", "r") as f:
                 data = json.load(f)
-                id_ = data.get("RC")
+                id_ = data.get("RCM")
 
-            await repoCommit(id_, projectName)
+            with open(checkList) as f:
+                check = json.load(f)
+
+            await repoCommit(id_, projectName, check[projectName])
+
     elif choice.strip() == "2":
         deleteChoice = input(Fore.RED + Style.BRIGHT + "Are you sure you want to delete this repository?" + Style.RESET_ALL + Style.DIM + "[y/N] ")
         if deleteChoice == "" or deleteChoice.upper().strip() == "N":
@@ -467,7 +491,7 @@ async def getRepoList(id_, username):
                 with open(("dataBase/idref.json"), "r") as f:
                     data = json.load(f)
 
-                    id_ = data.get("RCM")
+                    id_ = data.get("RC")
                 await repoCreate(id_, username, False)
                 break
             elif createChoice.upper().strip() == "N":
@@ -622,7 +646,7 @@ async def main():
                     with open(("dataBase/idref.json"), "r") as f:
                         data = json.load(f)
 
-                        id_ = data.get("RD")
+                        id_ = data.get("RM")
                     await removeData(id_, password)
 
                 else:
