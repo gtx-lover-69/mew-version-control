@@ -3,6 +3,7 @@ import asyncio
 import re
 import aiohttp
 import os
+from sys import exit
 import time
 from datetime import  datetime
 import subprocess
@@ -32,7 +33,8 @@ if not os.path.exists(idList):
                     "CHC":"0",
                     "RD":"0",
                     "RM":"0",
-                    "RCM":"0"
+                    "RCM":"0",
+                    "MP":"0",
                     }, f)
         f.flush()
 print("  idList:", os.path.abspath(idList))
@@ -212,18 +214,42 @@ async def signOut(id_, username, password):
             clear_screen()
             print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
             time.sleep(1)
-            exit(0)
+            exit()
 
-async def repoCreate(id_, username, isCheck):
-    while True:
-        while True:
-            print("What is the ID of the project you want to create a repository for? ")
-            projectID = input(Style.DIM + "(Must be public and owned by you) " + Style.RESET_ALL + "> ").strip()
-            if not projectID.isdigit():
-                print(Fore.RED + "Please enter a valid ID." + Style.RESET_ALL)
+async def mewPush(id_, projectID, projectName):
+    key = "MP"
+    identif = str(int(re.sub(r'\D', '', id_)) + 1)
+
+    url = f"https://projects.scratch.mit.edu/{projectID}"
+
+    with open(repoList, "r"):
+        repos = json.loads(repoList)
+
+    project_data = repos[projectName]
+
+    async with aiohttp.ClientSession(headers=headers) as http:
+        async with http.put(url, project_data) as resp:
+            resp.raise_for_status()
+            if not ({"status":"ok"} in await resp.json()):
+                print("Error.")
+                saveID(id_, key, identif, "no_push")
+                return False
             else:
-                projectID = int(projectID)
-                break
+                print("Success!")
+                saveID(id_, key, identif, "pushed")
+                return True
+
+async def repoCreate(id_, username, projectName, projectID=None):
+    while True:
+        if not projectName:
+            while True:
+                print("What is the ID of the project you want to create a repository for? ")
+                projectID = input(Style.DIM + "(Must be public and owned by you) " + Style.RESET_ALL + "> ").strip()
+                if not projectID.isdigit():
+                    print(Fore.RED + "Please enter a valid ID." + Style.RESET_ALL)
+                else:
+                    projectID = int(projectID)
+                    break
 
         url = f"https://api.scratch.mit.edu/users/{username}/projects"
         key = "RC"
@@ -401,12 +427,11 @@ async def repoCommit(id_, projectName, projectData):
         json.dump(local, f, indent=2)
         f.flush()
 
-    data = {
+    data = {projectName:{
         "id":key+identif,
-        "project_name": projectName,
         "message":msg,
         "data": projectData
-    }
+    }}
 
     with open(commitIndex, "w") as f:
         json.dump(data, f, indent=2)
@@ -444,6 +469,7 @@ async def repoGetData(id_, projectName, projectID, username):
     print("What would you like to do?")
     print("1. Commit changes locally")
     print("2. Delete repository")
+    print("3. Roll back to older version")
     choice = input("> ")
     if choice.strip() == "1":
         if not changes:
@@ -471,6 +497,23 @@ async def repoGetData(id_, projectName, projectID, username):
                 id_ = data.get("RD")
 
             await repoDelete(id_, projectName)
+    elif choice.strip() == "3":
+        with open(commitIndex) as f:
+            index = json.load(f)
+        width = 10
+        for i in index:
+            print(f"{index[i].get('id'):>{width}} │ {Style.BRIGHT}{i}{Style.RESET_ALL} │ Last updated: {index[i].get('last_updated')}")
+            while True:
+                commitChoice = input("Which repo would you like to push? [Enter the ID]: ")
+                if commitChoice.upper().strip() == index[i].get('id'):
+                    with open(("dataBase/idref.json"), "r") as f:
+                        data = json.load(f)
+
+                        id_ = data.get("MP")
+                    await mewPush(id_, projectID, projectName)
+                else:
+                    print("Invalid choice")
+
     else:
         print(Fore.RED + "Invalid choice.")
         time.sleep(0.2)
@@ -492,7 +535,7 @@ async def getRepoList(id_, username):
                     data = json.load(f)
 
                     id_ = data.get("RC")
-                await repoCreate(id_, username, False)
+                await repoCreate(id_, username, "")
                 break
             elif createChoice.upper().strip() == "N":
                 print("Alright!")
@@ -523,7 +566,25 @@ async def getRepoList(id_, username):
                     await repoGetData(id_, projectName, projectID, username)
                     break
             else:
-                print(Fore.RED + "Couldn't find project :(")
+                url = f"https://api.scratch.mit.edu/users/{username}/projects"
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                        try:
+                            projects = await resp.json()
+                            print(projects)
+                        except Exception as e:
+                            print(e)
+                            saveID(id_, key, identif, "unexpected_response")
+
+                for project in projects:
+                    if project.get("title") == projectName:
+                        print("Project found!")
+                        await repoCreate(id_, username, projectName, projectID)
+                        break
+                else:
+                    print(Fore.RED + "Couldn't find project :(" + Style.RESET_ALL)
+
                 saveID(id_, key, identif, "could_not_find")
                 return {"success": False, "error": "could_not_find"}
 
@@ -555,13 +616,14 @@ async def getProjectList(id_, username):
 
     input("Press enter to go back. ")
     saveID(id_, key, identif, "success")
-    return {"success": True, "username": username, "projects": projects}
+    return projects
 
 async def main():
     clear_screen()
     if not ping("scratch.mit.edu"):
         print(Fore.RED + "Could not connect. Check your internet connection.")
         time.sleep(3)
+        exit()
     else:
         print(fg_hex("#9cff63", "Connected successfully"))
         time.sleep(0.1)
@@ -674,7 +736,7 @@ async def main():
         elif menuChoice.strip() == "0":
             print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
             time.sleep(1)
-            exit(0)
+            exit()
 
         else:
             print("Invalid choice")
