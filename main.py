@@ -5,7 +5,7 @@ import aiohttp
 import os
 from sys import exit
 import time
-from datetime import  datetime
+from datetime import datetime
 import subprocess
 import getpass
 from colorama import Fore, Style
@@ -24,18 +24,18 @@ os.makedirs("dataBase", exist_ok=True)
 
 if not os.path.exists(idList):
     with open(idList, "w") as f:
-        json.dump({"L":"0",
-                    "GPL":"0",
-                    "GRL":"0",
-                    "RC":"0",
-                    "SO":"0",
-                    "GRD":"0",
-                    "CHC":"0",
-                    "RD":"0",
-                    "RM":"0",
-                    "RCM":"0",
-                    "MP":"0",
-                    }, f)
+        json.dump({"L": "0",
+                   "GPL": "0",
+                   "GRL": "0",
+                   "RC": "0",
+                   "SO": "0",
+                   "GRD": "0",
+                   "CHC": "0",
+                   "RD": "0",
+                   "RM": "0",
+                   "RCM": "0",
+                   "MP": "0",
+                   }, f)
         f.flush()
 print("  idList:", os.path.abspath(idList))
 
@@ -63,9 +63,11 @@ if not os.path.exists(commitIndex):
         f.flush()
 print("  commitIndex:", os.path.abspath(commitIndex))
 
+
 def hex_to_rgb(h):
     h = h.lstrip('#')
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
 
 def rgb_to_ansi256(r, g, b):
     def to_cube(x):
@@ -73,15 +75,20 @@ def rgb_to_ansi256(r, g, b):
     rc, gc, bc = to_cube(r), to_cube(g), to_cube(b)
     return 16 + 36 * rc + 6 * gc + bc
 
+
 def fg_hex(hex_color, text):
     r, g, b = hex_to_rgb(hex_color)
     idx = rgb_to_ansi256(r, g, b)
     return f"\x1b[38;5;{idx}m{text}{Style.RESET_ALL}"
 
-def clear_screen ():
+
+def clear_screen():
     if not os.environ.get("PYCHARM_HOSTED"):
         os.system('cls' if os.name == 'nt' else 'clear')
+
+
 clear_screen()
+
 
 def ping(site, count=3, timeout_s=1):
     print(f"Checking connection to {site}...")
@@ -94,6 +101,7 @@ def ping(site, count=3, timeout_s=1):
     result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return result.returncode == 0
 
+
 headers = {
     "x-csrftoken": "a",
     "x-requested-with": "XMLHttpRequest",
@@ -102,6 +110,7 @@ headers = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
     "Content-Type": "application/json",
 }
+
 
 def saveID(id_, key, identif, success):
     if os.path.exists(idList):
@@ -118,15 +127,18 @@ def saveID(id_, key, identif, success):
     if os.path.exists(idLog):
         with open(idLog, "r") as f:
             logData = json.load(f)
+    else:
+        logData = {}
 
     logData.setdefault(key, []).append({
-        "id": key+identif,
+        "id": key + identif,
         "status": success,
         "time": time.time()
     })
 
     with open(idLog, "w") as f:
         json.dump(logData, f, indent=2)
+
 
 async def login(id_, username, password):
     body = json.dumps({
@@ -172,12 +184,14 @@ async def login(id_, username, password):
         "token": result.get("token"),
     }
 
+
 async def removeData(id_, password):
-    key = "RD"
+    key = "RM"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
     print("This feature isn't available just yet. Check back in soon!")
     saveID(id_, key, identif, "nonexistent")
     return
+
 
 async def signOut(id_, username, password):
     key = "SO"
@@ -216,21 +230,30 @@ async def signOut(id_, username, password):
             time.sleep(1)
             exit()
 
-async def mewPush(id_, projectID, projectName):
+
+async def mewPush(id_, projectID):
     key = "MP"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
     url = f"https://projects.scratch.mit.edu/{projectID}"
 
-    with open(repoList, "r"):
-        repos = json.loads(repoList)
+    with open(repoList, "r") as f:
+        repos = json.load(f)
 
-    project_data = repos[projectName]
+    entry = repos.get(str(projectID))
+    if entry is None:
+        print(Fore.RED + "No local repo found for that project." + Style.RESET_ALL)
+        saveID(id_, key, identif, "no_repo")
+        return False
+
+    project_data = entry["project"]
 
     async with aiohttp.ClientSession(headers=headers) as http:
-        async with http.put(url, project_data) as resp:
+        async with http.put(url, data=json.dumps(project_data)) as resp:
             resp.raise_for_status()
-            if not ({"status":"ok"} in await resp.json()):
+            resp_json = await resp.json()
+
+            if resp_json.get("status") != "ok":
                 print("Error.")
                 saveID(id_, key, identif, "no_push")
                 return False
@@ -238,6 +261,7 @@ async def mewPush(id_, projectID, projectName):
                 print("Success!")
                 saveID(id_, key, identif, "pushed")
                 return True
+
 
 async def repoCreate(id_, username, projectName, projectID=None):
     while True:
@@ -266,15 +290,16 @@ async def repoCreate(id_, username, projectName, projectID=None):
 
         project_ids = {p["id"] for p in projects}
 
-        if not projectID in project_ids:
+        if projectID not in project_ids:
             print(Fore.RED + "Project ID not found. Make sure that you have published this project." + Style.RESET_ALL)
             time.sleep(1)
+            # allow retrying with a fresh id even if we were called with one
+            projectName = ""
         else:
             async def get_project_info(project_id):
-                url = f"https://api.scratch.mit.edu/projects/{project_id}"
-
+                info_url = f"https://api.scratch.mit.edu/projects/{project_id}"
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(url) as resp:
+                    async with session.get(info_url) as resp:
                         resp.raise_for_status()
                         return await resp.json()
 
@@ -282,22 +307,21 @@ async def repoCreate(id_, username, projectName, projectID=None):
             projectName = projectInfo["title"]
             projectToken = projectInfo["project_token"]
             print(Fore.BLUE + "Creating repository for " + projectName + Style.RESET_ALL)
-            url = f"https://projects.scratch.mit.edu/{projectID}?token={projectToken}"
+            fetch_url = f"https://projects.scratch.mit.edu/{projectID}?token={projectToken}"
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as resp:
+                async with session.get(fetch_url) as resp:
                     data = await resp.json(content_type=None)
 
-                with open(repoList, "r") as f:
-                    repos = json.load(f)
+            with open(repoList, "r") as f:
+                repos = json.load(f)
 
             timestamp = time.time()
-
             trueTime = str(datetime.fromtimestamp(timestamp))
 
-            repos[str(projectName)] = {
+            repos[str(projectID)] = {
                 "owner": username,
-                "project_id": projectID,
+                "project_name": projectName,
                 "project_token": projectToken,
                 "last_updated": trueTime,
                 "project": data
@@ -311,33 +335,32 @@ async def repoCreate(id_, username, projectName, projectID=None):
             input("Press enter to go back. ")
             break
 
+
 async def checkHasChanges(id_, projectID, username):
     key = "CHC"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
-    url = f"https://api.scratch.mit.edu/projects/{projectID}"
-
-    async def get_project_info(project_id):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                resp.raise_for_status()
-                return await resp.json()
-
-    projectInfo = await get_project_info(projectID)
-    projectName = projectInfo["title"]
-    projectToken = projectInfo["project_token"]
-    url = f"https://projects.scratch.mit.edu/{projectID}?token={projectToken}"
+    info_url = f"https://api.scratch.mit.edu/projects/{projectID}"
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
+        async with session.get(info_url) as resp:
+            resp.raise_for_status()
+            projectInfo = await resp.json()
+
+    projectName = projectInfo["title"]
+    projectToken = projectInfo["project_token"]
+    fetch_url = f"https://projects.scratch.mit.edu/{projectID}?token={projectToken}"
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(fetch_url) as resp:
             data = await resp.json(content_type=None)
 
-        with open(checkList, "r") as f:
-            repos = json.load(f)
+    with open(checkList, "r") as f:
+        repos = json.load(f)
 
-    repos[str(projectName)] = {
+    repos[str(projectID)] = {
         "owner": username,
-        "project_id": projectID,
+        "project_name": projectName,
         "project_token": projectToken,
         "project": data
     }
@@ -345,42 +368,35 @@ async def checkHasChanges(id_, projectID, username):
     with open(checkList, "w") as f:
         json.dump(repos, f, indent=2)
 
-    with open(checkList, "r") as f:
-        new = json.load(f)
-
     with open(repoList, "r") as f:
         oldData = json.load(f)
 
-    old = oldData[projectName]
-    new = new[projectName]
+    old = oldData[str(projectID)]
+    new = repos[str(projectID)]
 
     def diff_changes(old, new):
         # removed keys are marked with {"__removed__": true}
         if old == new:
             return {}
 
-        # dict vs dict: recurse
         if isinstance(old, dict) and isinstance(new, dict):
             out = {}
             old_keys = set(old.keys())
             new_keys = set(new.keys())
 
-            # added/changed
             for k in new_keys:
                 if k not in old:
-                    out[k] = new[k]  # added
+                    out[k] = new[k]
                 else:
                     sub = diff_changes(old[k], new[k])
                     if sub != {}:
-                        out[k] = sub  # changed
+                        out[k] = sub
 
-            # removed
             for k in old_keys - new_keys:
                 out[k] = {"__removed__": True}
 
             return out
 
-        # lists / primitives: replace whole value if different
         return new
 
     changes = diff_changes(old, new)
@@ -389,25 +405,30 @@ async def checkHasChanges(id_, projectID, username):
         json.dump(changes, f, indent=2, ensure_ascii=False)
         f.flush()
 
-    with open("changes.json", "r") as f:
-        data = json.load(f)
+    saveID(id_, key, identif, "success")
+    return changes
 
-    return data
 
-async def repoDelete(id_, projectName):
+async def repoDelete(id_, projectID):
     key = "RD"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
     try:
-        with open(repoList[projectName]) as f:
-            json.dump({}, f, indent=2)
-            saveID(id_, key, identif, "deleted")
+        with open(repoList, "r") as f:
+            repos = json.load(f)
+
+        repos.pop(str(projectID), None)
+
+        with open(repoList, "w") as f:
+            json.dump(repos, f, indent=2)
+
+        saveID(id_, key, identif, "deleted")
     except Exception as e:
         print(Fore.RED + "Error: " + str(e))
         saveID(id_, key, identif, "no_delete")
 
 
-async def repoCommit(id_, projectName, projectData):
+async def repoCommit(id_, projectID, projectData):
     key = "RCM"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
@@ -422,19 +443,23 @@ async def repoCommit(id_, projectName, projectData):
         local = json.load(f)
     with open(checkList) as f:
         checked = json.load(f)
-    local[projectName] = checked[projectName]
+
+    local[str(projectID)] = checked[str(projectID)]
     with open(repoList, "w") as f:
         json.dump(local, f, indent=2)
         f.flush()
 
-    data = {projectName:{
-        "id":key+identif,
-        "message":msg,
+    with open(commitIndex) as f:
+        index = json.load(f)
+
+    index[str(projectID)] = {
+        "id": key + identif,
+        "message": msg,
         "data": projectData
-    }}
+    }
 
     with open(commitIndex, "w") as f:
-        json.dump(data, f, indent=2)
+        json.dump(index, f, indent=2)
         f.flush()
 
     saveID(id_, key, identif, f"committed: {msg}")
@@ -445,32 +470,39 @@ async def repoGetData(id_, projectName, projectID, username):
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
     print("Retrieving data...")
-    changes = await checkHasChanges(id_, projectID, username)
+
+    with open("dataBase/idref.json", "r") as f:
+        data = json.load(f)
+        chcID = data.get("CHC")
+
+    changes = await checkHasChanges(chcID, projectID, username)
     clear_screen()
-    print(Style.BRIGHT + fg_hex("#ffb4cc",projectName))
+    print(Style.BRIGHT + fg_hex("#ffb4cc", projectName))
+
     with open(repoList) as f:
         repos = json.load(f)
 
-    print(Style.BRIGHT + Fore.BLUE + "  Owner: " ,Style.RESET_ALL,repos[projectName].get("owner"))
-    with open("dataBase/idref.json", "r") as f:
-        data = json.load(f)
-        id_ = data.get("CHC")
+    owner = repos.get(str(projectID), {}).get("owner")
+    print(Style.BRIGHT + Fore.BLUE + "  Owner: " + Style.RESET_ALL + str(owner))
 
-    print(Style.BRIGHT,Fore.BLUE,"Changes:",Style.RESET_ALL,Style.DIM,"Type " + Style.BRIGHT + "view " + Style.RESET_ALL + "to view changes")
+    print(Style.BRIGHT + Fore.BLUE + "Changes:" + Style.RESET_ALL + Style.DIM +
+          " Type " + Style.BRIGHT + "view " + Style.RESET_ALL + "to view changes")
     changeInput = input("> ")
     if changeInput.upper().strip() == "VIEW":
         print(json.dumps(changes, indent=2))
         input("Press enter to continue.")
 
-    os.remove("changes.json")
+    if os.path.exists("changes.json"):
+        os.remove("changes.json")
 
     clear_screen()
-    print(Style.BRIGHT + fg_hex("#ffb4cc",projectName))
+    print(Style.BRIGHT + fg_hex("#ffb4cc", projectName))
     print("What would you like to do?")
     print("1. Commit changes locally")
     print("2. Delete repository")
     print("3. Roll back to older version")
     choice = input("> ")
+
     if choice.strip() == "1":
         if not changes:
             print(Fore.RED + "Nothing to commit.")
@@ -479,44 +511,54 @@ async def repoGetData(id_, projectName, projectID, username):
         else:
             with open("dataBase/idref.json", "r") as f:
                 data = json.load(f)
-                id_ = data.get("RCM")
+                rcmID = data.get("RCM")
 
             with open(checkList) as f:
                 check = json.load(f)
 
-            await repoCommit(id_, projectName, check[projectName])
+            await repoCommit(rcmID, projectID, check[str(projectID)])
 
     elif choice.strip() == "2":
-        deleteChoice = input(Fore.RED + Style.BRIGHT + "Are you sure you want to delete this repository?" + Style.RESET_ALL + Style.DIM + "[y/N] ")
+        deleteChoice = input(Fore.RED + Style.BRIGHT + "Are you sure you want to delete this repository?" +
+                              Style.RESET_ALL + Style.DIM + " [y/N] ")
         if deleteChoice == "" or deleteChoice.upper().strip() == "N":
             saveID(id_, key, identif, "no_delete")
             print("Alright!")
         elif deleteChoice.upper().strip() == "Y":
             with open("dataBase/idref.json", "r") as f:
                 data = json.load(f)
-                id_ = data.get("RD")
+                rdID = data.get("RD")
 
-            await repoDelete(id_, projectName)
+            await repoDelete(rdID, projectID)
+
     elif choice.strip() == "3":
         with open(commitIndex) as f:
             index = json.load(f)
-        width = 10
-        for i in index:
-            print(f"{index[i].get('id'):>{width}} │ {Style.BRIGHT}{i}{Style.RESET_ALL} │ Last updated: {index[i].get('last_updated')}")
-            while True:
-                commitChoice = input("Which repo would you like to push? [Enter the ID]: ")
-                if commitChoice.upper().strip() == index[i].get('id'):
-                    with open(("dataBase/idref.json"), "r") as f:
-                        data = json.load(f)
 
-                        id_ = data.get("MP")
-                    await mewPush(id_, projectID, projectName)
+        entry = index.get(str(projectID))
+        if not entry:
+            print(Fore.RED + "No commits to roll back to." + Style.RESET_ALL)
+        else:
+            print(f"{entry.get('id'):>10} │ {Style.BRIGHT}{entry.get('message')}{Style.RESET_ALL}")
+
+            while True:
+                commitChoice = input("Push this commit? [y/N]: ").strip().upper()
+                if commitChoice == "Y":
+                    with open("dataBase/idref.json", "r") as f:
+                        data = json.load(f)
+                        mpID = data.get("MP")
+                    await mewPush(mpID, projectID)
+                    break
+                elif commitChoice in ("", "N"):
+                    print("Alright!")
+                    break
                 else:
                     print("Invalid choice")
 
     else:
         print(Fore.RED + "Invalid choice.")
         time.sleep(0.2)
+
 
 async def getRepoList(id_, username):
     key = "GRL"
@@ -531,11 +573,10 @@ async def getRepoList(id_, username):
         while True:
             createChoice = input(f"Would you like to create one? {Style.DIM}[Y/n] {Style.RESET_ALL}")
             if createChoice == "" or createChoice.upper().strip() == "Y":
-                with open(("dataBase/idref.json"), "r") as f:
+                with open("dataBase/idref.json", "r") as f:
                     data = json.load(f)
-
-                    id_ = data.get("RC")
-                await repoCreate(id_, username, "")
+                    rcID = data.get("RC")
+                await repoCreate(rcID, username, "")
                 break
             elif createChoice.upper().strip() == "N":
                 print("Alright!")
@@ -546,9 +587,10 @@ async def getRepoList(id_, username):
     else:
         clear_screen()
         print(Style.BRIGHT + fg_hex("#ffb4cc", "Your repositories"))
-        width = max(len(str(repos[i].get("project_id"))) for i in repos)
+        width = max(len(str(i)) for i in repos)
         for i in repos:
-            print(f"{repos[i].get('project_id'):>{width}} │ {Style.BRIGHT}{i}{Style.RESET_ALL} │ Last updated: {repos[i].get('last_updated')}")
+            print(f"{i:>{width}} │ {Style.BRIGHT}{repos[i].get('project_name')}{Style.RESET_ALL} │ "
+                  f"Last updated: {repos[i].get('last_updated')}")
 
         openRepoChoice = input("Input a repository ID to edit it, or press enter to go back. ")
         if openRepoChoice == "":
@@ -557,14 +599,16 @@ async def getRepoList(id_, username):
 
         elif openRepoChoice.strip().isdigit():
             projectID = int(openRepoChoice.strip())
-            for projectName, projectData in repos.items():
-                if projectData.get("project_id") == projectID:
-                    with open("dataBase/idref.json", "r") as f:
-                        data = json.load(f)
-                        id_ = data.get("GRD")
 
-                    await repoGetData(id_, projectName, projectID, username)
-                    break
+            if str(projectID) in repos:
+                projectData = repos[str(projectID)]
+                projectName = projectData.get("project_name")
+
+                with open("dataBase/idref.json", "r") as f:
+                    data = json.load(f)
+                    grdID = data.get("GRD")
+
+                await repoGetData(grdID, projectName, projectID, username)
             else:
                 url = f"https://api.scratch.mit.edu/users/{username}/projects"
 
@@ -572,32 +616,32 @@ async def getRepoList(id_, username):
                     async with session.get(url, timeout=aiohttp.ClientTimeout(total=20)) as resp:
                         try:
                             projects = await resp.json()
-                            print(projects)
                         except Exception as e:
                             print(e)
                             saveID(id_, key, identif, "unexpected_response")
+                            return {"success": False, "error": "unexpected_response"}
 
                 for project in projects:
-                    if project.get("title") == projectName:
+                    if project.get("id") == projectID:
                         print("Project found!")
-                        await repoCreate(id_, username, projectName, projectID)
+                        await repoCreate(id_, username, project.get("title"), projectID)
                         break
                 else:
                     print(Fore.RED + "Couldn't find project :(" + Style.RESET_ALL)
-
-                saveID(id_, key, identif, "could_not_find")
-                return {"success": False, "error": "could_not_find"}
+                    saveID(id_, key, identif, "could_not_find")
+                    return {"success": False, "error": "could_not_find"}
 
         else:
             print("Invalid choice, exiting.")
             saveID(id_, key, identif, "invalid_response")
             return {"success": False, "error": "invalid_response"}
 
+
 async def getProjectList(id_, username):
     clear_screen()
     url = f"https://api.scratch.mit.edu/users/{username}/projects"
 
-    key = "GRL"
+    key = "GPL"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
     async with aiohttp.ClientSession() as session:
@@ -609,14 +653,17 @@ async def getProjectList(id_, username):
                 saveID(id_, key, identif, "unexpected_response")
                 return {"success": False, "error": "unexpected_response"}
 
-    width = max(len(str(p.get("id"))) for p in projects)
-
-    for p in projects:
-        print(f"{p.get('id'):>{width}} │ {Style.BRIGHT}{p.get('title')}{Style.RESET_ALL}")
+    if not projects:
+        print(Fore.RED + "No public projects found." + Style.RESET_ALL)
+    else:
+        width = max(len(str(p.get("id"))) for p in projects)
+        for p in projects:
+            print(f"{p.get('id'):>{width}} │ {Style.BRIGHT}{p.get('title')}{Style.RESET_ALL}")
 
     input("Press enter to go back. ")
     saveID(id_, key, identif, "success")
     return projects
+
 
 async def main():
     clear_screen()
@@ -638,8 +685,8 @@ async def main():
             else:
                 password = input(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
             data = {
-                "username":username,
-                "password":password
+                "username": username,
+                "password": password
             }
             with open((savedir + username + ".json"), 'w') as file:
                 json.dump(data, file, indent=2)
@@ -657,13 +704,12 @@ async def main():
 
         with open(("dataBase/idref.json"), "r") as f:
             data = json.load(f)
-
             id_ = data.get("L")
 
         result = {"success": False}
 
         try:
-            result = await(login(id_, username, password))
+            result = await login(id_, username, password)
         except Exception as e:
             print("Error: " + str(e))
 
@@ -700,16 +746,15 @@ async def main():
                 elif settingsChoice.strip() == "1":
                     with open(("dataBase/idref.json"), "r") as f:
                         data = json.load(f)
-
                         id_ = data.get("SO")
                     await signOut(id_, username, password)
 
                 elif settingsChoice.strip() == "2":
                     with open(("dataBase/idref.json"), "r") as f:
                         data = json.load(f)
-
                         id_ = data.get("RM")
                     await removeData(id_, password)
+                    break
 
                 else:
                     print(Fore.RED + "Invalid choice. ")
@@ -718,7 +763,6 @@ async def main():
         elif menuChoice.strip() == "1":
             with open(("dataBase/idref.json"), "r") as f:
                 data = json.load(f)
-
                 id_ = data.get("GPL")
 
             await getProjectList(id_, username)
@@ -727,7 +771,6 @@ async def main():
         elif menuChoice.strip() == "2":
             with open(("dataBase/idref.json"), "r") as f:
                 data = json.load(f)
-
                 id_ = data.get("GRL")
 
             await getRepoList(id_, username)
