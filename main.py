@@ -185,13 +185,61 @@ async def login(id_, username, password):
     }
 
 
-async def removeData(id_, password):
+async def removeData(id_, password, username):
     key = "RM"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
-    print("This feature isn't available just yet. Check back in soon!")
-    saveID(id_, key, identif, "nonexistent")
-    return
 
+    while True:
+        print(f"{Fore.RED}[WARNING]{Style.RESET_ALL} This will delete all your data from this machine")
+        deleteChoice = input(f"{Fore.RED}[WARNING]{Style.RESET_ALL} Are you sure you want to do this? {Style.DIM} [y/N] {Style.RESET_ALL}")
+        if deleteChoice == "" or deleteChoice.upper().strip() == "N":
+            print("Alright!")
+            saveID(id_, key, identif, "user_cancelled")
+            return {"success": False, "error": "user_cancelled"}
+        elif deleteChoice.upper().strip() == "Y":
+            while True:
+                if not os.environ.get("PYCHARM_HOSTED"):
+                    passAttempt = getpass.getpass(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                else:
+                    passAttempt = input(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                if passAttempt.upper() == "ABORT":
+                    break
+                if passAttempt == password:
+                    break
+                print(Fore.RED + "Incorrect password." + Style.RESET_ALL)
+
+            if passAttempt.strip() == "ABORT":
+                print("Sign out cancelled.")
+                saveID(id_, key, identif, "user_cancelled")
+                return {"success": False, "error": "user_cancelled"}
+
+            with open(repoList, 'r') as f:
+                repos = json.load(f)
+
+            print("Removing data")
+            try:
+                os.remove(savedir + username + ".json")
+                for i in repos:
+                    if repos[i].get('owner') == username:
+                        try:
+                            repos.pop(str(i), None)
+
+                            with open(repoList, "w") as f:
+                                json.dump(repos, f, indent=2)
+                        except Exception:
+                            print("Unexpected error. Cancelling")
+                            exit()
+
+            except Exception:
+                print("Unexpected error. Cancelling")
+                exit()
+            saveID(id_, key, identif, "success")
+            print("Removed data.")
+            time.sleep(1)
+            clear_screen()
+            print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
+            time.sleep(1)
+            exit()
 
 async def signOut(id_, username, password):
     key = "SO"
@@ -221,10 +269,15 @@ async def signOut(id_, username, password):
                 saveID(id_, key, identif, "user_cancelled")
                 return {"success": False, "error": "user_cancelled"}
 
-            print("Signing out...")
-            os.remove(savedir + username + ".json")
+            print("Signing out.")
+            try:
+                os.remove(savedir + username + ".json")
+            except Exception as e:
+                print("Unexpected error. Cancelling")
+                exit()
             saveID(id_, key, identif, "success")
-            print("Removed data.")
+            print("Signed out.")
+            time.sleep(1)
             clear_screen()
             print(Style.BRIGHT + fg_hex("#ffb4cc", "See you soon!"))
             time.sleep(1)
@@ -261,7 +314,6 @@ async def mewPush(id_, projectID):
                 print("Success!")
                 saveID(id_, key, identif, "pushed")
                 return True
-
 
 async def repoCreate(id_, username, projectName, projectID=None):
     while True:
@@ -334,7 +386,6 @@ async def repoCreate(id_, username, projectName, projectID=None):
             print(Style.BRIGHT + fg_hex("#9cff63", "Repo created!"))
             input("Press enter to go back. ")
             break
-
 
 async def checkHasChanges(id_, projectID, username):
     key = "CHC"
@@ -483,12 +534,12 @@ async def repoGetData(id_, projectName, projectID, username):
         repos = json.load(f)
 
     owner = repos.get(str(projectID), {}).get("owner")
-    print(Style.BRIGHT + Fore.BLUE + "  Owner: " + Style.RESET_ALL + str(owner))
+    print(Style.BRIGHT + Fore.BLUE + "Owner: " + Style.RESET_ALL + str(owner))
 
-    print(Style.BRIGHT + Fore.BLUE + "Changes:" + Style.RESET_ALL + Style.DIM +
-          " Type " + Style.BRIGHT + "view " + Style.RESET_ALL + "to view changes")
+    if changes != "{}":
+        print(Style.BRIGHT + Fore.BLUE + "Changes:" + Style.RESET_ALL +"Type " + Style.BRIGHT + "view " + Style.RESET_ALL + "to view changes")
     changeInput = input("> ")
-    if changeInput.upper().strip() == "VIEW":
+    if changeInput.upper().strip() == "VIEW" and changes != "{}":
         print(json.dumps(changes, indent=2))
         input("Press enter to continue.")
 
@@ -500,11 +551,11 @@ async def repoGetData(id_, projectName, projectID, username):
     print("What would you like to do?")
     print("1. Commit changes locally")
     print("2. Delete repository")
-    print("3. Roll back to older version")
+    print("3. Roll back to older version (push)")
     choice = input("> ")
 
     if choice.strip() == "1":
-        if not changes:
+        if not changes or (changes == "{}"):
             print(Fore.RED + "Nothing to commit.")
             saveID(id_, key, identif, "no_commit")
             return
@@ -589,8 +640,8 @@ async def getRepoList(id_, username):
         print(Style.BRIGHT + fg_hex("#ffb4cc", "Your repositories"))
         width = max(len(str(i)) for i in repos)
         for i in repos:
-            print(f"{i:>{width}} │ {Style.BRIGHT}{repos[i].get('project_name')}{Style.RESET_ALL} │ "
-                  f"Last updated: {repos[i].get('last_updated')}")
+            if repos[i].get('owner') == username:
+                print(f"{i:>{width}} │ {Style.BRIGHT}{repos[i].get('project_name')}{Style.RESET_ALL} │ "f"Last updated: {repos[i].get('last_updated')}")
 
         openRepoChoice = input("Input a repository ID to edit it, or press enter to go back. ")
         if openRepoChoice == "":
@@ -753,7 +804,7 @@ async def main():
                     with open(("dataBase/idref.json"), "r") as f:
                         data = json.load(f)
                         id_ = data.get("RM")
-                    await removeData(id_, password)
+                    await removeData(id_, password, username)
                     break
 
                 else:
