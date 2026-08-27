@@ -191,17 +191,26 @@ async def removeData(id_, password, username):
 
     while True:
         print(f"{Fore.RED}[WARNING]{Style.RESET_ALL} This will delete all your data from this machine")
-        deleteChoice = input(f"{Fore.RED}[WARNING]{Style.RESET_ALL} Are you sure you want to do this? {Style.DIM} [y/N] {Style.RESET_ALL}")
+        try:
+            deleteChoice = input(f"{Fore.RED}[WARNING]{Style.RESET_ALL} Are you sure you want to do this? {Style.DIM} [y/N] {Style.RESET_ALL}")
+        except Exception:
+            print("Error")
+            break
         if deleteChoice == "" or deleteChoice.upper().strip() == "N":
             print("Alright!")
             saveID(id_, key, identif, "user_cancelled")
             return {"success": False, "error": "user_cancelled"}
         elif deleteChoice.upper().strip() == "Y":
             while True:
-                if not os.environ.get("PYCHARM_HOSTED"):
-                    passAttempt = getpass.getpass(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
-                else:
-                    passAttempt = input(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                while True:
+                    try:
+                        if not os.environ.get("PYCHARM_HOSTED"):
+                            passAttempt = getpass.getpass(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                        else:
+                            passAttempt = input(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                        break
+                    except KeyboardInterrupt or Exception:
+                        print("Error, try again.")
                 if passAttempt.upper() == "ABORT":
                     break
                 if passAttempt == password:
@@ -247,7 +256,12 @@ async def signOut(id_, username, password):
 
     while True:
         print(f"{Fore.RED}[WARNING]{Style.RESET_ALL} This will delete your password, token, and session ID from this machine.")
-        deleteChoice = input(f"{Fore.RED}[WARNING]{Style.RESET_ALL} Are you sure you want to sign out? {Style.DIM} [y/N] {Style.RESET_ALL}")
+        while True:
+            try:
+                deleteChoice = input(f"{Fore.RED}[WARNING]{Style.RESET_ALL} Are you sure you want to sign out? {Style.DIM} [y/N] {Style.RESET_ALL}")
+                break
+            except KeyboardInterrupt or Exception:
+                deleteChoice = "n"
         if deleteChoice == "" or deleteChoice.upper().strip() == "N":
             print("Alright!")
             saveID(id_, key, identif, "user_cancelled")
@@ -320,7 +334,13 @@ async def repoCreate(id_, username, projectName, projectID=None):
         if not projectName:
             while True:
                 print("What is the ID of the project you want to create a repository for? ")
-                projectID = input(Style.DIM + "(Must be public and owned by you) " + Style.RESET_ALL + "> ").strip()
+                while True:
+                    try:
+                        projectID = input(Style.DIM + "(Must be public and owned by you) " + Style.RESET_ALL + "> ").strip()
+                        break
+                    except Exception:
+                        print("Error, try again.")
+
                 if not projectID.isdigit():
                     print(Fore.RED + "Please enter a valid ID." + Style.RESET_ALL)
                 else:
@@ -384,8 +404,14 @@ async def repoCreate(id_, username, projectName, projectID=None):
 
             saveID(id_, key, identif, "success")
             print(Style.BRIGHT + fg_hex("#9cff63", "Repo created!"))
-            input("Press enter to go back. ")
-            break
+
+            while True:
+                try:
+                    input("Press enter to go back. ")
+                    break
+                except Exception:
+                    continue
+            saveID(id_, key, identif, "success")
 
 async def checkHasChanges(id_, projectID, username):
     key = "CHC"
@@ -484,7 +510,12 @@ async def repoCommit(id_, projectID, projectData):
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
     while True:
-        msg = input("Enter a commit message: ").strip("\n")
+        while True:
+            try:
+                msg = input("Enter a commit message: ").strip("\n")
+                break
+            except KeyboardInterrupt or Exception as e:
+                print("Error, try again.")
         if msg == "":
             print("Invalid input.")
         else:
@@ -538,10 +569,20 @@ async def repoGetData(id_, projectName, projectID, username):
 
     if changes != "{}":
         print(Style.BRIGHT + Fore.BLUE + "Changes:" + Style.RESET_ALL +"Type " + Style.BRIGHT + "view " + Style.RESET_ALL + "to view changes")
-    changeInput = input("> ")
+    while True:
+        try:
+            changeInput = input("> ")
+            break
+        except KeyboardInterrupt or Exception as e:
+            print("Error, try again.")
     if changeInput.upper().strip() == "VIEW" and changes != "{}":
         print(json.dumps(changes, indent=2))
-        input("Press enter to continue.")
+        while True:
+            try:
+                input("Press enter to continue. ")
+                break
+            except Exception:
+                continue
 
     if os.path.exists("changes.json"):
         os.remove("changes.json")
@@ -551,8 +592,16 @@ async def repoGetData(id_, projectName, projectID, username):
     print("What would you like to do?")
     print("1. Commit changes locally")
     print("2. Delete repository")
-    print("3. Roll back to older version (push)")
-    choice = input("> ")
+    with open(commitIndex) as f:
+        index = json.load(f)
+    if len(index) > 1:
+        print("3. Roll back to older version (push)")
+    while True:
+        try:
+            choice = input("> ")
+            break
+        except KeyboardInterrupt or Exception as e:
+            print("Error, try again.")
 
     if choice.strip() == "1":
         if not changes or (changes == "{}"):
@@ -570,8 +619,11 @@ async def repoGetData(id_, projectName, projectID, username):
             await repoCommit(rcmID, projectID, check[str(projectID)])
 
     elif choice.strip() == "2":
-        deleteChoice = input(Fore.RED + Style.BRIGHT + "Are you sure you want to delete this repository?" +
-                              Style.RESET_ALL + Style.DIM + " [y/N] ")
+        try:
+            deleteChoice = input(Fore.RED + Style.BRIGHT + "Are you sure you want to delete this repository?" + Style.RESET_ALL + Style.DIM + " [y/N] ")
+        except Exception:
+            deleteChoice = "n"
+
         if deleteChoice == "" or deleteChoice.upper().strip() == "N":
             saveID(id_, key, identif, "no_delete")
             print("Alright!")
@@ -593,7 +645,13 @@ async def repoGetData(id_, projectName, projectID, username):
             print(f"{entry.get('id'):>10} │ {Style.BRIGHT}{entry.get('message')}{Style.RESET_ALL}")
 
             while True:
-                commitChoice = input("Push this commit? [y/N]: ").strip().upper()
+                while True:
+                    try:
+                        commitChoice = input("Push this commit? [y/N]: ").strip().upper()
+                        break
+                    except KeyboardInterrupt or Exception:
+                        print("Error, try again.")
+
                 if commitChoice == "Y":
                     with open("dataBase/idref.json", "r") as f:
                         data = json.load(f)
@@ -622,7 +680,13 @@ async def getRepoList(id_, username):
         print(Fore.RED + "No repos... yet!" + Style.RESET_ALL)
         saveID(id_, key, identif, "no_repos")
         while True:
-            createChoice = input(f"Would you like to create one? {Style.DIM}[Y/n] {Style.RESET_ALL}")
+            while True:
+                try:
+                    createChoice = input(f"Would you like to create one? {Style.DIM}[Y/n] {Style.RESET_ALL}")
+                    break
+                except KeyboardInterrupt or Exception:
+                    print("Error, try again.")
+
             if createChoice == "" or createChoice.upper().strip() == "Y":
                 with open("dataBase/idref.json", "r") as f:
                     data = json.load(f)
@@ -643,7 +707,13 @@ async def getRepoList(id_, username):
             if repos[i].get('owner') == username:
                 print(f"{i:>{width}} │ {Style.BRIGHT}{repos[i].get('project_name')}{Style.RESET_ALL} │ "f"Last updated: {repos[i].get('last_updated')}")
 
-        openRepoChoice = input("Input a repository ID to edit it, or press enter to go back. ")
+        while True:
+            while True:
+                try:
+                    openRepoChoice = input("Input a repository ID to edit it or press enter to go back. ")
+                    break
+                except KeyboardInterrupt or Exception:
+                    print("Error, try again.")
         if openRepoChoice == "":
             saveID(id_, key, identif, "viewed_and_left")
             return {"success": True, "error": "viewed_and_left"}
@@ -710,8 +780,12 @@ async def getProjectList(id_, username):
         width = max(len(str(p.get("id"))) for p in projects)
         for p in projects:
             print(f"{p.get('id'):>{width}} │ {Style.BRIGHT}{p.get('title')}{Style.RESET_ALL}")
-
-    input("Press enter to go back. ")
+    while True:
+        try:
+            input("Press enter to go back. ")
+            break
+        except Exception:
+            continue
     saveID(id_, key, identif, "success")
     return projects
 
@@ -728,13 +802,23 @@ async def main():
 
     clear_screen()
     while True:
-        username = input(Style.RESET_ALL + "Enter your username: " + Fore.LIGHTBLUE_EX)
+        while True:
+            try:
+                username = input(Style.RESET_ALL + "Enter your username: " + Fore.LIGHTBLUE_EX)
+                break
+            except KeyboardInterrupt or Exception:
+                print("Error, try again.")
 
         if not os.path.isfile(savedir + username + ".json"):
-            if not os.environ.get("PYCHARM_HOSTED"):
-                password = getpass.getpass(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
-            else:
-                password = input(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+            while True:
+                try:
+                    if not os.environ.get("PYCHARM_HOSTED"):
+                        password = getpass.getpass(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                    else:
+                        password = input(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                    break
+                except KeyboardInterrupt or Exception:
+                    print("Error, try again.")
             data = {
                 "username": username,
                 "password": password
@@ -748,10 +832,16 @@ async def main():
                     data = json.load(f)
                     password = data.get("password")
                 except Exception:
-                    if not os.environ.get("PYCHARM_HOSTED"):
-                        password = getpass.getpass(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
-                    else:
-                        password = input(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                    while True:
+                        try:
+                            if not os.environ.get("PYCHARM_HOSTED"):
+                                password = getpass.getpass(
+                                    Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                            else:
+                                password = input(Style.RESET_ALL + "Enter your password: " + Fore.LIGHTBLUE_EX)
+                            break
+                        except KeyboardInterrupt or Exception:
+                            print("Error, try again.")
 
         with open(("dataBase/idref.json"), "r") as f:
             data = json.load(f)
@@ -779,7 +869,12 @@ async def main():
         print("2. View your repos")
         print("S. Settings")
         print("0. Exit")
-        menuChoice = input("> ")
+        while True:
+            try:
+                menuChoice = input("> ")
+                break
+            except KeyboardInterrupt or Exception as e:
+                print("Error, try again.")
         if menuChoice == "":
             print(Fore.RED + "Invalid choice. Try again." + Style.RESET_ALL)
 
@@ -790,7 +885,12 @@ async def main():
             print("1. Sign out")
             print("2. Remove all data")
             while True:
-                settingsChoice = input("> ")
+                while True:
+                    try:
+                        settingsChoice = input("> ")
+                        break
+                    except KeyboardInterrupt or Exception as e:
+                        print("Error, try again.")
                 if settingsChoice == "":
                     print(Fore.RED + "Invalid choice.")
 
