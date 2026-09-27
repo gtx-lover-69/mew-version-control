@@ -9,6 +9,7 @@ from datetime import datetime
 import subprocess
 import getpass
 from colorama import Fore, Style
+from yarl import URL
 
 savedir = "dataBase/userData/"
 idList = "dataBase/idref.json"
@@ -84,7 +85,7 @@ def fg_hex(hex_color, text):
 
 def clear_screen():
     if not os.environ.get("PYCHARM_HOSTED"):
-        os.system('cls' if os.name == 'nt' else 'clear')
+        os.subprocess('cls' if os.name == 'nt' else 'clear')
 
 
 clear_screen()
@@ -140,6 +141,36 @@ def saveID(id_, key, identif, success):
         json.dump(logData, f, indent=2)
 
 
+async def getXToken(session_id, csrf_token):
+    x_token = None
+    tries = 1
+    req_headers = {
+        "x-requested-with": "XMLHttpRequest",
+        "x-csrftoken": csrf_token or "a",
+        "referer": "https://scratch.mit.edu",
+        "user-agent": headers["user-agent"],
+        "Cookie": f"scratchsessionsid={session_id};scratchcsrftoken={csrf_token};scratchlanguage=en;",
+    }
+    async with aiohttp.ClientSession() as session:
+        print(Style.RESET_ALL + "Pulling x-token...")
+        while tries < 4 and not x_token:
+            try:
+                async with session.get(
+                        "https://scratch.mit.edu/session/",
+                        headers=req_headers
+                ) as sess_resp:
+                    sess_data = await sess_resp.json(content_type=None)
+                    x_token = sess_data.get("user", {}).get("token")
+                tries += 1
+            except Exception as e:
+                print(Fore.YELLOW + f"Try {tries} | Warning: couldn't fetch x-token ({e})" + Style.RESET_ALL)
+                tries += 1
+
+    if x_token is not (None or "None" or ""):
+        print(fg_hex("#9cff63", "Got x-token!"))
+        print(Fore.BLUE + x_token + Style.RESET_ALL)
+    return x_token
+
 async def login(id_, username, password):
     body = json.dumps({
         "username": username,
@@ -163,27 +194,43 @@ async def login(id_, username, password):
                 saveID(id_, key, identif, "invalid_credentials")
                 return {"success": False, "error": "invalid_credentials"}
 
-            session_cookie = resp.cookies.get("scratchsessionsid")
+        cookie_jar = session.cookie_jar.filter_cookies(URL("https://scratch.mit.edu"))
+        session_cookie = cookie_jar.get("scratchsessionsid")
+        csrf_cookie = cookie_jar.get("scratchcsrftoken")
+        session_id = session_cookie.value if session_cookie else None
+        csrf_token = csrf_cookie.value if csrf_cookie else None
 
-    data = {
-        "username": username,
-        "password": password,
-        "session_id": session_cookie.value if session_cookie else None,
-        "token": result.get("token"),
-    }
+        x_token = await getXToken(session_id, csrf_token)
 
-    with open(savedir + username + ".json", "w") as file:
-        json.dump(data, file, indent=2)
+        data = {
+            "username": username,
+            "password": password,
+            "session_id": session_id,
+            "csrf_token": csrf_token,
+            "x_token": x_token,
+            "token": result.get("token"),
+        }
+        with open(savedir + username + ".json", "w") as file:
+            json.dump(data, file, indent=2)
 
-    saveID(id_, key, identif, "success")
-    print("Authenticated!")
-    return {
-        "success": True,
-        "username": username,
-        "session_id": session_cookie.value if session_cookie else None,
-        "token": result.get("token"),
-    }
+        saveID(id_, key, identif, "success")
+        print("Authenticated!")
+        return {
+            "success": True,
+            "username": username,
+            "session_id": session_id,
+            "csrf_token": csrf_token,
+            "x_token": x_token,
+            "token": result.get("token"),
+        }
 
+def authedHeaders(session_data):
+    h = dict(headers)
+    h["Cookie"] = f"scratchsessionsid={session_data.get('session_id')};scratchcsrftoken={session_data.get('csrf_token')};scratchlanguage=en;"
+    h["x-csrftoken"] = session_data.get("csrf_token") or h["x-csrftoken"]
+    if session_data.get("x_token"):
+        h["x-token"] = session_data["x_token"]
+    return h
 
 async def removeData(id_, password, username):
     key = "RM"
@@ -329,14 +376,14 @@ async def mewPush(id_, projectID):
                 saveID(id_, key, identif, "pushed")
                 return True
 
-async def repoCreate(id_, username, projectName, projectID=None):
+async def repoCreate(id_, username, projectName, session_data,projectID=None,):
     while True:
         if not projectName:
             while True:
                 print("What is the ID of the project you want to create a repository for? ")
                 while True:
                     try:
-                        projectID = input(Style.DIM + "(Must be public and owned by you) " + Style.RESET_ALL + "> ").strip()
+                        projectID = input(Style.DIM + "(Must be owned by you) " + Style.RESET_ALL + "> ").strip()
                         break
                     except Exception:
                         print("Error, try again.")
@@ -347,31 +394,23 @@ async def repoCreate(id_, username, projectName, projectID=None):
                     projectID = int(projectID)
                     break
 
-        url = f"https://api.scratch.mit.edu/users/{username}/projects"
-        key = "RC"
-        identif = str(int(re.sub(r'\D', '', id_)) + 1)
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params={"limit": 40}, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-                try:
-                    projects = await resp.json()
-                except Exception as e:
-                    print(e)
-                    saveID(id_, key, identif, "unexpected_response")
-                    return {"success": False, "error": "unexpected_response"}
+        projects = await getProjectList(id_, username, session_data)
 
         project_ids = {p["id"] for p in projects}
 
         if projectID not in project_ids:
-            print(Fore.RED + "Project ID not found. Make sure that you have published this project." + Style.RESET_ALL)
+            print(Fore.RED + "Project ID not found." + Style.RESET_ALL)
             time.sleep(1)
             # allow retrying with a fresh id even if we were called with one
             projectName = ""
         else:
             async def get_project_info(project_id):
                 info_url = f"https://api.scratch.mit.edu/projects/{project_id}"
+                auth_headers = authedHeaders(session_data)
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(info_url) as resp:
+                    async with session.get(info_url, headers=auth_headers) as resp:
+                        if resp.status == 404:
+                            return None
                         resp.raise_for_status()
                         return await resp.json()
 
@@ -402,6 +441,8 @@ async def repoCreate(id_, username, projectName, projectID=None):
             with open(repoList, "w") as f:
                 json.dump(repos, f, indent=2)
 
+            key = "RC"
+            identif = str(int(re.sub(r'\D', '', id_)) + 1)
             saveID(id_, key, identif, "success")
             print(Style.BRIGHT + fg_hex("#9cff63", "Repo created!"))
 
@@ -411,7 +452,6 @@ async def repoCreate(id_, username, projectName, projectID=None):
                     break
                 except Exception:
                     continue
-            saveID(id_, key, identif, "success")
 
 async def checkHasChanges(id_, projectID, username):
     key = "CHC"
@@ -669,7 +709,7 @@ async def repoGetData(id_, projectName, projectID, username):
         time.sleep(0.2)
 
 
-async def getRepoList(id_, username):
+async def getRepoList(id_, username, session_data):
     key = "GRL"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
@@ -691,7 +731,7 @@ async def getRepoList(id_, username):
                 with open("dataBase/idref.json", "r") as f:
                     data = json.load(f)
                     rcID = data.get("RC")
-                await repoCreate(rcID, username, "")
+                await repoCreate(rcID, username, "", session_data)
                 break
             elif createChoice.upper().strip() == "N":
                 print("Alright!")
@@ -708,12 +748,11 @@ async def getRepoList(id_, username):
                 print(f"{i:>{width}} │ {Style.BRIGHT}{repos[i].get('project_name')}{Style.RESET_ALL} │ "f"Last updated: {repos[i].get('last_updated')}")
 
         while True:
-            while True:
-                try:
-                    openRepoChoice = input("Input a repository ID to edit it or press enter to go back. ")
-                    break
-                except KeyboardInterrupt or Exception:
-                    print("Error, try again.")
+            try:
+                openRepoChoice = input("Input a repository ID to edit it or press enter to go back. ")
+                break
+            except KeyboardInterrupt or Exception:
+                print("Error, try again.")
         if openRepoChoice == "":
             saveID(id_, key, identif, "viewed_and_left")
             return {"success": True, "error": "viewed_and_left"}
@@ -745,7 +784,7 @@ async def getRepoList(id_, username):
                 for project in projects:
                     if project.get("id") == projectID:
                         print("Project found!")
-                        await repoCreate(id_, username, project.get("title"), projectID)
+                        await repoCreate(id_, username, project.get("title"), session_data, projectID)
                         break
                 else:
                     print(Fore.RED + "Couldn't find project :(" + Style.RESET_ALL)
@@ -758,37 +797,62 @@ async def getRepoList(id_, username):
             return {"success": False, "error": "invalid_response"}
 
 
-async def getProjectList(id_, username):
+async def getProjectList(id_, username, session_data):
     clear_screen()
-    url = f"https://api.scratch.mit.edu/users/{username}/projects"
+    public_url = f"https://api.scratch.mit.edu/users/{username}/projects"
+    priv_url = "https://scratch.mit.edu/site-api/projects/all/"
+    auth_headers = authedHeaders(session_data)
 
     key = "GPL"
     identif = str(int(re.sub(r'\D', '', id_)) + 1)
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-            try:
-                projects = await resp.json()
-            except Exception as e:
-                print(e)
-                saveID(id_, key, identif, "unexpected_response")
-                return {"success": False, "error": "unexpected_response"}
+    public_raw = []
+    private_raw = []
 
-    if not projects:
-        print(Fore.RED + "No public projects found." + Style.RESET_ALL)
-    else:
-        width = max(len(str(p.get("id"))) for p in projects)
-        for p in projects:
-            print(f"{p.get('id'):>{width}} │ {Style.BRIGHT}{p.get('title')}{Style.RESET_ALL}")
-    while True:
-        try:
-            input("Press enter to go back. ")
-            break
-        except Exception:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(public_url, headers=auth_headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+            try:
+                public_raw = await resp.json()
+            except Exception as e:
+                body = await resp.text()
+                print(Fore.YELLOW + f"Couldn't get public projects. status={resp.status} err={e}")
+                print(Fore.YELLOW + body[:300] + Style.RESET_ALL)
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(priv_url, headers=auth_headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+            try:
+                private_raw = await resp.json()
+            except Exception as e:
+                body = await resp.text()
+                print(Fore.YELLOW + f"Couldn't get private projects. status={resp.status} err={e}")
+                print(Fore.YELLOW + body[:300] + Style.RESET_ALL)
+
+    projects = {}
+    for p in public_raw:
+        pid = p.get("id")
+        if pid is None:
             continue
+        projects[pid] = {
+            "id": pid,
+            "title": p.get("title"),
+            "shared": bool(p.get("history", {}).get("shared")) or bool(p.get("is_published")),
+        }
+    for p in private_raw:
+        fields = p.get("fields", {})
+        pid = p.get("pk")
+        if pid is None:
+            continue
+
+        projects.setdefault(pid, {
+            "id": pid,
+            "title": fields.get("title"),
+            "shared": bool(fields.get("isPublished")),
+        })
+
+    projects = list(projects.values())
+
     saveID(id_, key, identif, "success")
     return projects
-
 
 async def main():
     clear_screen()
@@ -915,16 +979,36 @@ async def main():
             with open(("dataBase/idref.json"), "r") as f:
                 data = json.load(f)
                 id_ = data.get("GPL")
+            with open(savedir + username + ".json") as f:
+                session_data = json.load(f)
 
-            await getProjectList(id_, username)
+            projects = await getProjectList(id_, username, session_data)
+
+            if not projects:
+                print(Fore.RED + "No projects found." + Style.RESET_ALL)
+            else:
+                width = max(len(str(p["id"])) for p in projects)
+                for p in projects:
+                    status = (Fore.BLUE + "Public " + Style.RESET_ALL) if p["shared"] else (
+                                Fore.RED + "Private" + Style.RESET_ALL)
+                    print(f"{p['id']:>{width}} │ {status} │ {Style.BRIGHT}{p['title']}{Style.RESET_ALL}")
+
+            while True:
+                try:
+                    input("Press enter to go back. ")
+                    break
+                except Exception:
+                    continue
 
         # Get repo list
         elif menuChoice.strip() == "2":
             with open(("dataBase/idref.json"), "r") as f:
                 data = json.load(f)
                 id_ = data.get("GRL")
+            with open(savedir + username + ".json") as f:
+                session_data = json.load(f)
 
-            await getRepoList(id_, username)
+            await getRepoList(id_, username, session_data)
 
         # Exit
         elif menuChoice.strip() == "0":
