@@ -8,5 +8,6 @@ Firstly, you'll need to sign in and view the list of all your published projects
 Then, you'd use the ID of one of the projects to create a local repository, where all the project data will be stored.
 This repo can then be accessed through the menu, where you can see changes since last local commit.
 If you have older versions of a project, you can also roll back and push remotely through the repo menu.
+**No personal information is stored, except on your local machine.**
 
 Thank you so much for viewing my project!
