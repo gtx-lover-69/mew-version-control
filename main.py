@@ -85,7 +85,7 @@ def fg_hex(hex_color, text):
 
 def clear_screen():
     if not os.environ.get("PYCHARM_HOSTED"):
-        os.subprocess('cls' if os.name == 'nt' else 'clear')
+        os.system('cls' if os.name == 'nt' else 'clear')
 
 
 clear_screen()
